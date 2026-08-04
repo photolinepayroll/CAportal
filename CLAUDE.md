@@ -24,6 +24,20 @@ No build step, no npm, no framework. Google Apps Script Web App bound to a Googl
 `doGet(e)` serves `Employee.html` by default, or `Admin.html` when `?page=admin` is in the URL.
 Same deployed URL for both; the query param is the only difference.
 
+## Two hosting modes, one codebase
+This repo is deployed in two places simultaneously, same pattern as `payslip-chatbot`:
+1. **Apps Script Web App** (`/exec` URL) — the real backend. `Code.gs` only runs here.
+2. **GitHub Pages** (`photolinepayroll.github.io/CAportal/`) — a static mirror of just the
+   frontend files, talking to the same Apps Script backend over `fetch()` via the
+   `LOCAL_WEB_APP_URL` bridge (see below), since GitHub Pages can't run Apps Script code.
+
+`index.html` exists only for GitHub Pages — it's a one-line redirect to `Employee.html`, since
+Apps Script's `doGet` doesn't use it at all (it serves the file named `Employee`, not `index`).
+Because the two hosts route between Employee/Admin differently (`?page=admin` query string vs.
+real separate files), the "Staff Access" / "Employee Portal" footer links are set dynamically at
+load time based on whether `google.script.run` exists — see the `DOMContentLoaded` handlers near
+the bottom of `Employee.html` and `Admin.html`.
+
 ## Data model (single Google Sheet, ID hardcoded as `SHEET_ID` in Code.gs)
 - **`Form Responses 1`** (`REQUESTS_TAB`) — the actual CA requests. Columns A–F are legacy
   (from the original Google Form) and are left alone; columns G onward were added by this project.

@@ -158,7 +158,7 @@
 
     <div class="chat-input-area">
       <div id="chatInputArea"></div>
-      <div class="chat-footer"><a href="?page=admin">Staff Access</a></div>
+      <div class="chat-footer"><a href="?page=admin" id="staffLink">Staff Access</a></div>
     </div>
   </div>
 
@@ -691,6 +691,14 @@
     }
 
     // ================= boot =================
+    // Under Apps Script, Admin.html is reached via ?page=admin on this same exec URL. On static
+    // hosting (e.g. GitHub Pages) there's no server-side routing, so link to the real file instead.
+    document.addEventListener('DOMContentLoaded', function () {
+      if (!(window.google && window.google.script && window.google.script.run)) {
+        document.getElementById('staffLink').href = 'Admin.html';
+      }
+    });
+
     document.addEventListener('DOMContentLoaded', startGreeting);
   </script>
 </body>

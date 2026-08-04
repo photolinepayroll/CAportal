@@ -227,7 +227,7 @@
     </div>
 
     <footer class="ledger-footer">
-      Photoline &middot; Internal Use Only &middot; CA Portal &middot; <a class="staff-link" href="?">Employee Portal</a>
+      Photoline &middot; Internal Use Only &middot; CA Portal &middot; <a class="staff-link" href="?" id="employeeLink">Employee Portal</a>
     </footer>
   </div>
 
@@ -641,6 +641,11 @@
     });
 
     document.addEventListener('DOMContentLoaded', function () {
+      // Under Apps Script, the Employee page is this same exec URL with no query string. On static
+      // hosting (e.g. GitHub Pages) there's no server-side routing, so link to the real file instead.
+      if (!(window.google && window.google.script && window.google.script.run)) {
+        document.getElementById('employeeLink').href = 'Employee.html';
+      }
       document.querySelectorAll('.ledger-tab').forEach(function (tab) {
         tab.addEventListener('click', function () { goToView(tab.dataset.view); });
       });
