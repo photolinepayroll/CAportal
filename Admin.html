@@ -1,6 +1,9 @@
 <!DOCTYPE html>
 <html>
 <head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Photoline CA Portal — Staff</title>
   <link rel="icon" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAIAAAD8GO2jAAAFhUlEQVR4nL1WS2yUVRS+r/+fR/95dWZK25m+AlWiSAnEglEao2hiwgYWaowL48aEjSZu2OvODRujwbhwQQhGiTExwWiC1ULkVUJBiJS20BaknZlOp/P6H/feY+6dztiZtriCk5mbe2fOPeee7zwxAKDHSeSxSkdPQAHb7I/10AEAxlhv1FFv/6PaX+sJrxckhMCaWlkxFkICQowqu1suSikRQpTS/4HI4x7CiBCCm0lIyOWLlBJGSdV2c8uV2gMaDFo0eJ73KIiUdABKCCDACNWQQPqpjJIfx+4Vqr7eGF0uZA8dGAQIAkiENa/mppQJ6XqeZxjGJgpc1+fzg5a4Kh2pEyXo02/ujH77647QTHl4eNEO2iR55HBEAlZ8Wn4NM0qI4zgbKwAAzrnfr3yobykHCYEMRo6dmjr39ZdfpH4wup/1E3+gU7z7+XmXf/DRm9s8LijF6kGAMJIYE4/zRjg0+QAAhJAIY8BKRW2lFNmuMzY+/2Hyl3/Kvrt9A1PZW6WTx4+mzo5euW87jpKung6ofksKUXP4Bk7WrFKbACBBSkkwyi9X9u8MtR05PucQeDiz1L79anqf89ZnI0Oh/HKFKPlSXdRBhZHab+pkJbiuW2vC2hEEhKhaVv7tT/r6AunUID4ccCpF5/wSJkQHOiJI3WsIXhvizYmmsdSWqkPNxSbDf00tJyI8nUqicDARCQm3OpVbujNXMAwMSAKSoiFZG7/WhpZMBikF1+y1nPW4tNqMdBxfuJr3mdWDI506qEzCob/bCPiY4wgdrFgtCCjTYYs3ymQp5VI+Z4Usv1lzjA4mBAgThLh0HduujI1PWW0+bSAk49Gntg7UTFYv13HnuKhULMZicaLQW2eBlGAQdOx0puLgoa2+ii2Dflws8ZkFPtAV+OmSfGkwMXnD3tYTScRCHf7AmculyQfu9jTLrYhzt0RPh/HxIYuLRzhZwckv3hbZIlycFOkkLZQ451Aoo4VC9casO5iKTObCDyu4UPWOxtmVKTh/0x27Xm6PmvkV8Ps0Us3UokB52PKh+Rza1oVHJ0R7mLyxhyVC1OXQFSXJCI4NKVRP/uGl48TyyS1RevaafHmI1qJaQ765BSoviLyfh/cOmCWbchAuFzdneabA33/dd21GPNNjfHfGiVt4S5R89XNppcwcTyajLFeELZbnowhU9djcAqzKIXrhaeOdEevMuM0IDgeYbYvLd9xXnwv9Pe/tf759dHKpt8OIt+HTl/iuftqboq/sxgWHjk+akhFlRrMFa6MIMpkFf8AfMFHFwSZFmEiEMCOIEqiCT87PLJw41X3wNXtuXiQ6SOaBPTtv7tzF4vHy77/5wyE2MIB3DNuum0x0bBxFtYyvOCrjXYGRigdwEEghmWVW8kUvm50+8X2gIyFLE7xUDuzZLe5ncLZQWSgUrt8OViGxdwSq1VrIrmLeHKYCQOgSDAip5Mc6nwkGzAw+PW1EwsZKngD40t2Rw4fsq1dI0A+2Te1q6MV9bcN7pddai5pa5tzcbCDoNxir/Vj/IpCSBoOlC3+yeMxbzEBmkaZS7sQEYoYoFo3+PrOrm3Qkke2wgYFyvpBO9zWSuVUBgIxGY57nYZXAilaLOwBiDAmh1nrjJ4YhFScGKYFzZpqF5RwmtCfdizaEKBZrX1rKVe2KYZiNioh1h1e1SXC18Tz14QJxLqsVJDh4HpbSMA3HLmdz2WgktlZmk5Mty0omO6enpxPxRDgcUn0c67fXsdLtUWluQFhbhBDF/MrCwmJPui8UCv3P2LK4uHjv3l3HsTHBq+22leoTQR1DQGAws6+3v7Ors5V1w9lUCFEul9fPIKjerWte0Napo2Ewy7IaQ9HanryxgicxOqL67NbwwiNos7nxSVjwL2Y4SqdeoXvjAAAAAElFTkSuQmCC">
   <base target="_top">
   <!--
@@ -101,7 +104,8 @@
   }
   textarea:focus { outline: none; border-color: var(--ink); box-shadow: 0 0 0 3px rgba(31,45,61,0.08); }
 
-  .ledger-table { width: 100%; border-collapse: collapse; margin-top: 4px; }
+  .table-scroll { width: 100%; overflow-x: auto; }
+  .ledger-table { width: 100%; min-width: 640px; border-collapse: collapse; margin-top: 4px; }
   .ledger-table th {
     font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--slate);
     text-align: left; padding: 8px 10px; border-bottom: 2px solid var(--ink);
@@ -395,7 +399,7 @@
         container.innerHTML = '<p class="empty-state">No pending requests.</p>';
         return;
       }
-      var html = '<table class="ledger-table"><thead><tr>' +
+      var html = '<div class="table-scroll"><table class="ledger-table"><thead><tr>' +
         '<th>Name</th><th>Branch</th><th>Amount</th><th>Cutoff</th><th>Working Days</th><th>Purpose</th><th>Actions</th>' +
         '</tr></thead><tbody>';
       rows.forEach(function (r) {
@@ -422,7 +426,7 @@
           '</td>' +
           '</tr>';
       });
-      html += '</tbody></table>';
+      html += '</tbody></table></div>';
       container.innerHTML = html;
 
       container.querySelectorAll('[data-action]').forEach(function (btn) {
@@ -473,7 +477,7 @@
         container.innerHTML = '<p class="empty-state">No requests awaiting approval.</p>';
         return;
       }
-      var html = '<table class="ledger-table"><thead><tr>' +
+      var html = '<div class="table-scroll"><table class="ledger-table"><thead><tr>' +
         '<th>Name</th><th>Branch</th><th>Amount</th><th>Cutoff</th><th>Working Days</th><th>Processor Remarks</th><th>Actions</th>' +
         '</tr></thead><tbody>';
       rows.forEach(function (r) {
@@ -500,7 +504,7 @@
           '</td>' +
           '</tr>';
       });
-      html += '</tbody></table>';
+      html += '</tbody></table></div>';
       container.innerHTML = html;
 
       container.querySelectorAll('[data-open]').forEach(function (btn) {
@@ -593,7 +597,7 @@
         return;
       }
       var total = rows.reduce(function (sum, r) { return sum + Number(r.amount || 0); }, 0);
-      var html = '<table class="ledger-table"><thead><tr>' +
+      var html = '<div class="table-scroll"><table class="ledger-table"><thead><tr>' +
         '<th>Request ID</th><th>Name</th><th>Branch</th><th>Amount</th><th>Cutoff</th><th>ATD</th><th>Date Approved</th>' +
         '</tr></thead><tbody>';
       rows.forEach(function (r) {
@@ -607,7 +611,7 @@
           '<td>' + formatDate(r.dateApproved) + '</td>' +
           '</tr>';
       });
-      html += '</tbody></table>';
+      html += '</tbody></table></div>';
       html += '<p class="summary-total">Total to disburse: <strong>' + formatCurrency(total) + '</strong> across ' + rows.length + ' request(s)</p>';
       container.innerHTML = html;
     }
