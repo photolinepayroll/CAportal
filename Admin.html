@@ -193,6 +193,12 @@
 
     <div class="ledger-card">
 
+      <!-- ===== Landing (shown before any role tab is picked) ===== -->
+      <section class="view-panel active" id="view-landing">
+        <p class="panel-title">Admin Access</p>
+        <p class="panel-subtitle">Piliin ang seksyon sa itaas — Processor, Approver, o HR Summary. Hihingan ka ng PIN kapag pumili ka.</p>
+      </section>
+
       <!-- ===== Processor Queue ===== -->
       <section class="view-panel" id="view-processor">
         <p class="panel-title">Processor Queue</p>
@@ -659,7 +665,6 @@
       document.getElementById('pinInput').addEventListener('keydown', function (e) {
         if (e.key === 'Enter') submitPin();
       });
-      goToView('processor');
     });
   </script>
 </body>
