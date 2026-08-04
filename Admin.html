@@ -68,6 +68,19 @@
   .ledger-tab:hover { color: var(--ink); transform: translateY(2px); }
   .ledger-tab.active { background: var(--paper-card); color: var(--ink); transform: translateY(0); box-shadow: 0 -2px 8px var(--shadow-ink); }
   .ledger-tab .lock-icon { opacity: 0.6; margin-left: 4px; font-size: 11px; }
+  .ledger-tab.disabled { opacity: 0.35; cursor: not-allowed; pointer-events: none; }
+
+  .login-card { max-width: 360px; margin: 40px auto 0; }
+  .field-group { margin-bottom: 16px; }
+  .field-group label {
+    display: block; font-family: var(--font-mono); font-size: 11px; text-transform: uppercase;
+    letter-spacing: 0.06em; color: var(--slate); margin-bottom: 6px;
+  }
+  .field-group input {
+    width: 100%; font-family: var(--font-body); font-size: 15px; color: var(--ink); background: #fffdf8;
+    border: 1px solid var(--paper-line); border-radius: 2px; padding: 10px 12px;
+  }
+  .field-group input:focus { outline: none; border-color: var(--ink); box-shadow: 0 0 0 3px rgba(31,45,61,0.08); }
 
   .ledger-card {
     background: var(--paper-card); border: 1px solid var(--paper-line); border-radius: 2px;
@@ -125,22 +138,6 @@
   .review-inline textarea { margin-bottom: 10px; }
   .atd-toggle { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; font-family: var(--font-mono); font-size: 12px; }
 
-  .modal-backdrop {
-    position: fixed; inset: 0; background: rgba(31,45,61,0.55);
-    display: none; align-items: center; justify-content: center; z-index: 50; padding: 20px;
-  }
-  .modal-backdrop.show { display: flex; }
-  .modal-card { background: var(--paper-card); border: 2px solid var(--ink); max-width: 360px; width: 100%; padding: 26px; position: relative; }
-  .modal-card::after { content: ''; position: absolute; top: 10px; right: 10px; bottom: 10px; left: 10px; border: 1px solid var(--pending); pointer-events: none; }
-  .modal-title { font-family: var(--font-display); font-size: 18px; font-weight: 700; margin: 0 0 4px; }
-  .modal-sub { font-family: var(--font-mono); font-size: 11px; color: var(--slate); text-transform: uppercase; letter-spacing: 0.08em; margin: 0 0 18px; }
-  .modal-card input {
-    width: 100%; font-family: var(--font-mono); letter-spacing: 0.3em; text-align: center; font-size: 20px;
-    color: var(--ink); background: #fffdf8; border: 1px solid var(--paper-line); border-radius: 2px; padding: 10px 12px;
-  }
-  .modal-card input:focus { outline: none; border-color: var(--ink); box-shadow: 0 0 0 3px rgba(31,45,61,0.08); }
-  .modal-actions { display: flex; gap: 10px; margin-top: 16px; }
-  .modal-actions .btn { flex: 1; }
   .form-msg { font-size: 13px; margin-top: 14px; padding: 10px 12px; border-radius: 2px; display: none; }
   .form-msg.show { display: block; }
   .form-msg.error { background: rgba(166,61,51,0.1); color: var(--rejected); border: 1px solid rgba(166,61,51,0.3); }
@@ -185,74 +182,77 @@
       <p class="tagline" id="todayLabel"></p>
     </header>
 
-    <nav class="ledger-nav">
-      <div class="ledger-tab" data-view="processor">Processor <span class="lock-icon">&#128274;</span></div>
-      <div class="ledger-tab" data-view="approver">Approver <span class="lock-icon">&#128274;</span></div>
-      <div class="ledger-tab" data-view="hr">HR Summary <span class="lock-icon">&#128274;</span></div>
-    </nav>
+    <!-- ===== Login (shown before authenticating) ===== -->
+    <div class="ledger-card login-card" id="loginCard">
+      <p class="panel-title">Staff Login</p>
+      <p class="panel-subtitle">Cash Advance Review Desk</p>
+      <div class="field-group">
+        <label for="loginUsername">Username</label>
+        <input type="text" id="loginUsername" autocomplete="username">
+      </div>
+      <div class="field-group">
+        <label for="loginPassword">Password</label>
+        <input type="password" id="loginPassword" autocomplete="current-password">
+      </div>
+      <p class="form-msg error" id="loginError">Invalid login. Please try again.</p>
+      <div class="btn-row">
+        <button class="btn" id="loginSubmitBtn" type="button">Log In</button>
+      </div>
+    </div>
 
-    <div class="ledger-card">
+    <!-- ===== Dashboard (shown after login) ===== -->
+    <div id="dashboardArea" style="display:none;">
+      <nav class="ledger-nav">
+        <div class="ledger-tab" data-view="processor">Processor <span class="lock-icon">&#128274;</span></div>
+        <div class="ledger-tab" data-view="approver">Approver <span class="lock-icon">&#128274;</span></div>
+        <div class="ledger-tab" data-view="hr">HR Summary <span class="lock-icon">&#128274;</span></div>
+      </nav>
 
-      <!-- ===== Landing (shown before any role tab is picked) ===== -->
-      <section class="view-panel active" id="view-landing">
-        <p class="panel-title">Admin Access</p>
-        <p class="panel-subtitle">Piliin ang seksyon sa itaas — Processor, Approver, o HR Summary. Hihingan ka ng PIN kapag pumili ka.</p>
-      </section>
+      <div class="ledger-card">
 
-      <!-- ===== Processor Queue ===== -->
-      <section class="view-panel" id="view-processor">
-        <p class="panel-title">Processor Queue</p>
-        <p class="panel-subtitle">Validate completeness and Working Days, then forward to the Approver</p>
-        <div id="proc-results"></div>
-      </section>
+        <!-- ===== Processor Queue ===== -->
+        <section class="view-panel" id="view-processor">
+          <p class="panel-title">Processor Queue</p>
+          <p class="panel-subtitle">Validate completeness and Working Days, then forward to the Approver</p>
+          <div id="proc-results"></div>
+        </section>
 
-      <!-- ===== Approver Queue ===== -->
-      <section class="view-panel" id="view-approver">
-        <p class="panel-title">Approver Queue</p>
-        <p class="panel-subtitle">Confirm ATD compliance (per auditor verification), then approve or reject</p>
-        <div id="appr-results"></div>
-      </section>
+        <!-- ===== Approver Queue ===== -->
+        <section class="view-panel" id="view-approver">
+          <p class="panel-title">Approver Queue</p>
+          <p class="panel-subtitle">Confirm ATD compliance (per auditor verification), then approve or reject</p>
+          <div id="appr-results"></div>
+        </section>
 
-      <!-- ===== HR Summary ===== -->
-      <section class="view-panel" id="view-hr">
-        <p class="panel-title">HR Disbursement Summary</p>
-        <p class="panel-subtitle">Approved requests, ready for disbursement</p>
+        <!-- ===== HR Summary ===== -->
+        <section class="view-panel" id="view-hr">
+          <p class="panel-title">HR Disbursement Summary</p>
+          <p class="panel-subtitle">Approved requests, ready for disbursement</p>
 
-        <div class="window-panel" id="ca-window-panel">
-          <div class="window-status" id="ca-window-status">Loading CA window status…</div>
-          <div class="row-actions">
-            <button class="btn btn-outline" data-override="AUTO" type="button">Auto (Mon–Wed)</button>
-            <button class="btn btn-approve" data-override="FORCE_OPEN" type="button">Force Open</button>
-            <button class="btn btn-reject" data-override="FORCE_CLOSED" type="button">Force Close</button>
+          <div class="window-panel" id="ca-window-panel">
+            <div class="window-status" id="ca-window-status">Loading CA window status…</div>
+            <div class="row-actions">
+              <button class="btn btn-outline" data-override="AUTO" type="button">Auto (Mon–Wed)</button>
+              <button class="btn btn-approve" data-override="FORCE_OPEN" type="button">Force Open</button>
+              <button class="btn btn-reject" data-override="FORCE_CLOSED" type="button">Force Close</button>
+            </div>
           </div>
-        </div>
 
-        <div class="btn-row tight">
-          <button class="btn btn-outline" id="hr-refresh" type="button">Refresh</button>
-          <button class="btn" id="hr-export" type="button">Export CSV</button>
-        </div>
+          <div class="btn-row tight">
+            <button class="btn btn-outline" id="hr-refresh" type="button">Refresh</button>
+            <button class="btn" id="hr-export" type="button">Export CSV</button>
+          </div>
 
-        <div id="hr-results"></div>
-      </section>
+          <div id="hr-results"></div>
+        </section>
 
+      </div>
     </div>
 
     <footer class="ledger-footer">
       Photoline &middot; Internal Use Only &middot; CA Portal &middot; <a class="staff-link" href="?" id="employeeLink">Employee Portal</a>
+      <span id="logoutWrap" style="display:none;"> &middot; <a class="staff-link" href="#" id="logoutLink">Logout</a></span>
     </footer>
-  </div>
-
-  <div class="modal-backdrop" id="pinBackdrop">
-    <div class="modal-card">
-      <p class="modal-title">Authorization Required</p>
-      <p class="modal-sub">Enter <span id="pinModalRole"></span> PIN</p>
-      <input type="password" id="pinInput" inputmode="numeric" maxlength="8" placeholder="&bull;&bull;&bull;&bull;">
-      <p class="form-msg error" id="pinModalError">Incorrect PIN. Please try again.</p>
-      <div class="modal-actions">
-        <button class="btn btn-outline" id="pinCancelBtn" type="button">Cancel</button>
-        <button class="btn" id="pinSubmitBtn" type="button">Unlock</button>
-      </div>
-    </div>
   </div>
 
   <div id="toast"></div>
@@ -310,25 +310,26 @@
       return d.toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: 'numeric' });
     }
 
-    // ---------- role credential cache (per browser tab) ----------
-    var ROLE_CREDS_KEY = 'ca_portal_role_creds';
+    // ---------- session (real login, one account = one role; "admin" role can access everything) ----------
+    var SESSION_KEY = 'ca_portal_session';
 
-    function getStoredPin(role) {
-      try {
-        var store = JSON.parse(sessionStorage.getItem(ROLE_CREDS_KEY) || '{}');
-        return store[role] || null;
-      } catch (e) { return null; }
+    function getSession() {
+      try { return JSON.parse(sessionStorage.getItem(SESSION_KEY) || 'null'); } catch (e) { return null; }
     }
 
-    function storePin(role, pin) {
-      var store = {};
-      try { store = JSON.parse(sessionStorage.getItem(ROLE_CREDS_KEY) || '{}'); } catch (e) {}
-      store[role] = pin;
-      sessionStorage.setItem(ROLE_CREDS_KEY, JSON.stringify(store));
+    function storeSession(session) {
+      sessionStorage.setItem(SESSION_KEY, JSON.stringify(session));
     }
 
-    // ---------- view router (all three admin views are PIN-gated) ----------
-    var GATED_ROLES = { processor: 'processor', approver: 'approver', hr: 'hr' };
+    function clearSession() {
+      sessionStorage.removeItem(SESSION_KEY);
+    }
+
+    function canAccess(session, view) {
+      return session.role === 'admin' || session.role === view;
+    }
+
+    // ---------- view router ----------
     var viewLoaders = {};
 
     function activateView(view) {
@@ -337,69 +338,75 @@
     }
 
     function goToView(view) {
-      var role = GATED_ROLES[view];
-      var pin = getStoredPin(role);
-      if (pin) {
-        activateView(view);
-        if (viewLoaders[view]) viewLoaders[view](pin);
-      } else {
-        openPinModal(role, view);
-      }
+      var session = getSession();
+      if (!session || !canAccess(session, view)) return; // disabled tabs have no click handler anyway; this is just a backstop
+      activateView(view);
+      if (viewLoaders[view]) viewLoaders[view](session);
     }
 
-    var pendingUnlock = null;
+    /** Shows the dashboard for a logged-in session: enables only the tab(s) the role can access. */
+    function enterDashboard(session) {
+      document.getElementById('loginCard').style.display = 'none';
+      document.getElementById('dashboardArea').style.display = '';
+      document.getElementById('logoutWrap').style.display = '';
 
-    function openPinModal(role, view) {
-      pendingUnlock = { role: role, view: view };
-      document.getElementById('pinModalRole').textContent = role.toUpperCase();
-      document.getElementById('pinInput').value = '';
-      document.getElementById('pinModalError').classList.remove('show');
-      document.getElementById('pinBackdrop').classList.add('show');
-      document.getElementById('pinInput').focus();
+      document.querySelectorAll('.ledger-tab').forEach(function (tab) {
+        var view = tab.dataset.view;
+        var allowed = canAccess(session, view);
+        tab.classList.toggle('disabled', !allowed);
+        var lock = tab.querySelector('.lock-icon');
+        if (lock) lock.style.display = allowed ? 'none' : '';
+        if (allowed) {
+          tab.addEventListener('click', function () { goToView(view); });
+        }
+      });
+
+      var firstAllowed = ['processor', 'approver', 'hr'].filter(function (v) { return canAccess(session, v); })[0];
+      if (firstAllowed) goToView(firstAllowed);
     }
 
-    function closePinModal() {
-      document.getElementById('pinBackdrop').classList.remove('show');
-      pendingUnlock = null;
-    }
-
-    function submitPin() {
-      if (!pendingUnlock) return;
-      var pin = document.getElementById('pinInput').value.trim();
-      var role = pendingUnlock.role, view = pendingUnlock.view;
-      var btn = document.getElementById('pinSubmitBtn');
+    function doLogin() {
+      var username = document.getElementById('loginUsername').value.trim();
+      var password = document.getElementById('loginPassword').value;
+      if (!username || !password) return;
+      var btn = document.getElementById('loginSubmitBtn');
       btn.disabled = true;
-      gs('checkPin', role, pin).then(function (ok) {
+      document.getElementById('loginError').classList.remove('show');
+      gs('login', username, password).then(function (result) {
         btn.disabled = false;
-        if (ok) {
-          storePin(role, pin);
-          closePinModal();
-          activateView(view);
-          if (viewLoaders[view]) viewLoaders[view](pin);
+        if (result.success) {
+          var session = { username: username, password: password, role: result.role, name: result.name };
+          storeSession(session);
+          enterDashboard(session);
         } else {
-          document.getElementById('pinModalError').classList.add('show');
+          document.getElementById('loginError').classList.add('show');
         }
       }).catch(function () {
         btn.disabled = false;
-        document.getElementById('pinModalError').classList.add('show');
+        document.getElementById('loginError').classList.add('show');
       });
     }
 
-    // ================= Processor Queue =================
-    viewLoaders.processor = function (pin) { loadProcessorQueue(pin); };
+    function doLogout() {
+      clearSession();
+      location.reload();
+    }
 
-    function loadProcessorQueue(pin) {
+    // ================= Processor Queue =================
+    viewLoaders.processor = function (session) { loadProcessorQueue(session); };
+
+    function loadProcessorQueue(session) {
       var container = document.getElementById('proc-results');
       container.innerHTML = '<p class="empty-state">Loading…</p>';
-      gs('getPendingForProcessor', pin).then(function (rows) {
-        renderProcessorQueue(rows, pin);
+      gs('getPendingForProcessor', session.username, session.password).then(function (rows) {
+        renderProcessorQueue(rows, session);
       }).catch(function (err) {
         container.innerHTML = '<p class="empty-state">Error loading queue.</p>';
         toast(err && err.message ? err.message : String(err), 'error');
       });
     }
 
-    function renderProcessorQueue(rows, pin) {
+    function renderProcessorQueue(rows, session) {
       var container = document.getElementById('proc-results');
       if (!rows.length) {
         container.innerHTML = '<p class="empty-state">No pending requests.</p>';
@@ -452,9 +459,9 @@
           var remarks = document.getElementById('proc-remarks-' + id).value.trim();
           if (action === 'reject' && !remarks) { toast('Remarks are required to reject.', 'error'); return; }
           btn.disabled = true;
-          gs('processorReview', id, action, remarks, pin).then(function () {
+          gs('processorReview', id, action, remarks, session.username, session.password).then(function () {
             toast(action === 'forward' ? 'Forwarded to Approver.' : 'Request rejected.', 'success');
-            loadProcessorQueue(pin);
+            loadProcessorQueue(session);
           }).catch(function (err) {
             btn.disabled = false;
             toast(err && err.message ? err.message : String(err), 'error');
@@ -464,20 +471,20 @@
     }
 
     // ================= Approver Queue =================
-    viewLoaders.approver = function (pin) { loadApproverQueue(pin); };
+    viewLoaders.approver = function (session) { loadApproverQueue(session); };
 
-    function loadApproverQueue(pin) {
+    function loadApproverQueue(session) {
       var container = document.getElementById('appr-results');
       container.innerHTML = '<p class="empty-state">Loading…</p>';
-      gs('getPendingForApprover', pin).then(function (rows) {
-        renderApproverQueue(rows, pin);
+      gs('getPendingForApprover', session.username, session.password).then(function (rows) {
+        renderApproverQueue(rows, session);
       }).catch(function (err) {
         container.innerHTML = '<p class="empty-state">Error loading queue.</p>';
         toast(err && err.message ? err.message : String(err), 'error');
       });
     }
 
-    function renderApproverQueue(rows, pin) {
+    function renderApproverQueue(rows, session) {
       var container = document.getElementById('appr-results');
       if (!rows.length) {
         container.innerHTML = '<p class="empty-state">No requests awaiting approval.</p>';
@@ -531,9 +538,9 @@
           var atd = document.getElementById('appr-atd-' + id).checked;
           if (action === 'reject' && !remarks) { toast('Remarks are required to reject.', 'error'); return; }
           btn.disabled = true;
-          gs('approverReview', id, action, atd, remarks, pin).then(function () {
+          gs('approverReview', id, action, atd, remarks, session.username, session.password).then(function () {
             toast(action === 'approve' ? 'Request approved and forwarded to HR.' : 'Request rejected.', 'success');
-            loadApproverQueue(pin);
+            loadApproverQueue(session);
           }).catch(function (err) {
             btn.disabled = false;
             toast(err && err.message ? err.message : String(err), 'error');
@@ -545,9 +552,9 @@
     // ================= HR Summary =================
     var hrRowsCache = [];
 
-    viewLoaders.hr = function (pin) { loadHrSummary(pin); loadCaWindowStatus(pin); };
+    viewLoaders.hr = function (session) { loadHrSummary(session); loadCaWindowStatus(); };
 
-    function loadCaWindowStatus(pin) {
+    function loadCaWindowStatus() {
       var statusEl = document.getElementById('ca-window-status');
       gs('getCaWindowStatus').then(function (status) {
         renderCaWindowStatus(status);
@@ -570,10 +577,10 @@
 
     document.querySelectorAll('#ca-window-panel [data-override]').forEach(function (btn) {
       btn.addEventListener('click', function () {
-        var pin = getStoredPin('hr');
-        if (!pin) return;
+        var session = getSession();
+        if (!session) return;
         btn.disabled = true;
-        gs('setCaWindowOverride', btn.dataset.override, pin).then(function (status) {
+        gs('setCaWindowOverride', btn.dataset.override, session.username, session.password).then(function (status) {
           btn.disabled = false;
           renderCaWindowStatus(status);
           toast('CA window updated.', 'success');
@@ -584,10 +591,10 @@
       });
     });
 
-    function loadHrSummary(pin) {
+    function loadHrSummary(session) {
       var container = document.getElementById('hr-results');
       container.innerHTML = '<p class="empty-state">Loading…</p>';
-      gs('generateHrSummary', pin).then(function (rows) {
+      gs('generateHrSummary', session.username, session.password).then(function (rows) {
         hrRowsCache = rows;
         renderHrSummary(rows);
       }).catch(function (err) {
@@ -647,8 +654,8 @@
     });
 
     document.getElementById('hr-refresh').addEventListener('click', function () {
-      var pin = getStoredPin('hr');
-      if (pin) loadHrSummary(pin);
+      var session = getSession();
+      if (session) loadHrSummary(session);
     });
 
     document.addEventListener('DOMContentLoaded', function () {
@@ -657,14 +664,21 @@
       if (!(window.google && window.google.script && window.google.script.run)) {
         document.getElementById('employeeLink').href = 'Employee.html';
       }
-      document.querySelectorAll('.ledger-tab').forEach(function (tab) {
-        tab.addEventListener('click', function () { goToView(tab.dataset.view); });
+
+      document.getElementById('loginSubmitBtn').addEventListener('click', doLogin);
+      document.getElementById('loginPassword').addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') doLogin();
       });
-      document.getElementById('pinCancelBtn').addEventListener('click', closePinModal);
-      document.getElementById('pinSubmitBtn').addEventListener('click', submitPin);
-      document.getElementById('pinInput').addEventListener('keydown', function (e) {
-        if (e.key === 'Enter') submitPin();
+      document.getElementById('loginUsername').addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') document.getElementById('loginPassword').focus();
       });
+      document.getElementById('logoutLink').addEventListener('click', function (e) {
+        e.preventDefault();
+        doLogout();
+      });
+
+      var existingSession = getSession();
+      if (existingSession) enterDashboard(existingSession);
     });
   </script>
 </body>

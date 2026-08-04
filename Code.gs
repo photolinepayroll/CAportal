@@ -17,7 +17,7 @@ function doGet(e) {
  */
 function doPost(e) {
   var whitelist = {
-    checkPin: checkPin,
+    login: login,
     createRequest: createRequest,
     getRequestByLastNameAndId: getRequestByLastNameAndId,
     getPendingForProcessor: getPendingForProcessor,
@@ -105,7 +105,8 @@ var CUTOFF_PERIODS = ['26-10', '11-25'];
 var ROLES = {
   PROCESSOR: 'processor',
   APPROVER: 'approver',
-  HR: 'hr'
+  HR: 'hr',
+  ADMIN: 'admin'
 };
 
 function getSpreadsheet_() {
@@ -126,10 +127,11 @@ function getRolesSheet_() {
   var sheet = ss.getSheetByName(ROLES_TAB);
   if (!sheet) {
     sheet = ss.insertSheet(ROLES_TAB);
-    sheet.appendRow(['Role', 'Name', 'PIN']);
-    sheet.appendRow([ROLES.PROCESSOR, 'PLACEHOLDER', '0000']);
-    sheet.appendRow([ROLES.APPROVER, 'PLACEHOLDER', '0000']);
-    sheet.appendRow([ROLES.HR, 'PLACEHOLDER', '0000']);
+    sheet.appendRow(['Username', 'Password', 'Role', 'Name']);
+    sheet.appendRow(['admin', 'CHANGE_ME', ROLES.ADMIN, 'Administrator']);
+    sheet.appendRow(['processor1', 'CHANGE_ME', ROLES.PROCESSOR, 'PLACEHOLDER']);
+    sheet.appendRow(['approver1', 'CHANGE_ME', ROLES.APPROVER, 'PLACEHOLDER']);
+    sheet.appendRow(['hr1', 'CHANGE_ME', ROLES.HR, 'PLACEHOLDER']);
   }
   return sheet;
 }
@@ -278,8 +280,8 @@ function getCaWindowStatus() {
 }
 
 /** HR-only: force the CA window open/closed, or reset to the Mon-Wed auto schedule. */
-function setCaWindowOverride(value, pin) {
-  requireRole_(ROLES.HR, pin);
+function setCaWindowOverride(value, username, password) {
+  requireAccess_(username, password, ROLES.HR);
   if (Object.keys(CA_WINDOW_OVERRIDES).indexOf(value) === -1) {
     throw new Error('Invalid override value: ' + value);
   }
@@ -311,35 +313,46 @@ function ensureRequestHeaders_() {
 }
 
 /**
- * Role dashboards (Processor/Approver/HR) are gated by a shared PIN per role instead of
- * Google account identity, since staff aren't reliably on a Google Workspace domain.
- * Every protected server function re-checks the PIN (stateless) — the client just remembers
- * a verified {role, pin} pair in sessionStorage so the user isn't retyping it constantly.
+ * Admin.html is a real login (Username + Password), not per-tab PINs — staff aren't reliably on a
+ * Google Workspace domain so this isn't Google-account-based. Each account has exactly one role;
+ * "admin" is a special role with access to every section. Every protected server function
+ * re-checks the credentials (stateless) — the client just remembers the verified session in
+ * sessionStorage so the user isn't logging in again on every click.
  */
 
-function verifyPin_(role, pin) {
+/** Looks up a Username+Password match in the Roles tab. Returns {username, role, name} or null. */
+function findUser_(username, password) {
+  var needleUser = String(username || '').trim().toLowerCase();
+  var needlePass = String(password || '').trim();
+  if (!needleUser || !needlePass) return null;
   var sheet = getRolesSheet_();
   var data = sheet.getDataRange().getValues();
   for (var i = 1; i < data.length; i++) {
-    var rowRole = String(data[i][0]).trim().toLowerCase();
-    var rowPin = String(data[i][2]).trim();
-    if (rowRole === role && rowPin !== '' && rowPin === String(pin).trim()) {
-      return true;
+    var rowUser = String(data[i][0]).trim().toLowerCase();
+    var rowPass = String(data[i][1]).trim();
+    if (rowUser === needleUser && rowPass !== '' && rowPass === needlePass) {
+      return { username: rowUser, role: String(data[i][2]).trim().toLowerCase(), name: String(data[i][3]).trim() };
     }
   }
-  return false;
+  return null;
 }
 
-/** Throws if the given role/pin doesn't match a row in the Roles tab. Call at the top of every protected function. */
-function requireRole_(role, pin) {
-  if (!verifyPin_(role, pin)) {
-    throw new Error('Invalid PIN for role "' + role + '".');
+/** Throws unless the credentials belong to requiredRole OR the admin role (admin can access everything). */
+function requireAccess_(username, password, requiredRole) {
+  var user = findUser_(username, password);
+  if (!user) {
+    throw new Error('Invalid login.');
+  }
+  if (user.role !== requiredRole && user.role !== ROLES.ADMIN) {
+    throw new Error('Access denied for this section.');
   }
 }
 
-/** Client-callable check used by the PIN-unlock modal before it stores credentials locally. */
-function checkPin(role, pin) {
-  return verifyPin_(role, pin);
+/** Client-callable — the login screen calls this once. Returns {success:false} on any mismatch, no hint which part was wrong. */
+function login(username, password) {
+  var user = findUser_(username, password);
+  if (!user) return { success: false };
+  return { success: true, role: user.role, name: user.name };
 }
 
 function validateNewRequest_(data) {
@@ -513,19 +526,14 @@ function getRequestByLastNameAndId(lastName, requestId) {
   });
 }
 
-function getPendingForProcessor(pin) {
-  requireRole_(ROLES.PROCESSOR, pin);
+function getPendingForProcessor(username, password) {
+  requireAccess_(username, password, ROLES.PROCESSOR);
   return getAllRequests_().filter(function (r) { return r.status === STATUS.PENDING; });
 }
 
-function getPendingForApprover(pin) {
-  requireRole_(ROLES.APPROVER, pin);
+function getPendingForApprover(username, password) {
+  requireAccess_(username, password, ROLES.APPROVER);
   return getAllRequests_().filter(function (r) { return r.status === STATUS.PROCESSING; });
-}
-
-function getApprovedForHr(pin) {
-  requireRole_(ROLES.HR, pin);
-  return getAllRequests_().filter(function (r) { return r.status === STATUS.APPROVED; });
 }
 
 function setRowFields_(rowIndex, fields) {
@@ -539,8 +547,8 @@ function setRowFields_(rowIndex, fields) {
  * Processor reviews a Pending request.
  * action: 'forward' (Pending -> Processing) or 'reject' (Pending -> Rejected, remarks required).
  */
-function processorReview(requestId, action, remarks, pin) {
-  requireRole_(ROLES.PROCESSOR, pin);
+function processorReview(requestId, action, remarks, username, password) {
+  requireAccess_(username, password, ROLES.PROCESSOR);
   var req = findRequestByIdOrThrow_(requestId);
   if (req.status !== STATUS.PENDING) {
     throw new Error('Request is not in Pending status.');
@@ -561,8 +569,8 @@ function processorReview(requestId, action, remarks, pin) {
  * Approver reviews a Processing request.
  * action: 'approve' (Processing -> Approved, forwarded to HR) or 'reject' (Processing -> Rejected, remarks required).
  */
-function approverReview(requestId, action, atdCompliance, remarks, pin) {
-  requireRole_(ROLES.APPROVER, pin);
+function approverReview(requestId, action, atdCompliance, remarks, username, password) {
+  requireAccess_(username, password, ROLES.APPROVER);
   var req = findRequestByIdOrThrow_(requestId);
   if (req.status !== STATUS.PROCESSING) {
     throw new Error('Request is not in Processing status.');
@@ -590,8 +598,8 @@ function approverReview(requestId, action, atdCompliance, remarks, pin) {
 }
 
 /** HR-facing: rows where Status = Approved, ready for disbursement. CSV export happens client-side from this data. */
-function generateHrSummary(pin) {
-  requireRole_(ROLES.HR, pin);
+function generateHrSummary(username, password) {
+  requireAccess_(username, password, ROLES.HR);
   return getAllRequests_()
     .filter(function (r) { return r.status === STATUS.APPROVED; })
     .sort(function (a, b) { return new Date(a.dateApproved) - new Date(b.dateApproved); });

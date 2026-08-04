@@ -13,7 +13,7 @@ quick-reply buttons) instead of a generic form.
 ## Stack
 No build step, no npm, no framework. Google Apps Script Web App bound to a Google Sheet.
 - **Backend:** `Code.gs` — one file, all server functions.
-- **Frontend:** `Employee.html` (public, no login) and `Admin.html` (PIN-gated), each fully
+- **Frontend:** `Employee.html` (public, no login) and `Admin.html` (real username/password login), each fully
   self-contained (inline `<style>`/`<script>`, no includes) so they're easy to paste whole into
   the Apps Script editor.
 - **Manifest:** `appsscript.json` — `executeAs: USER_DEPLOYING`, `access: ANYONE_ANONYMOUS`. The
@@ -43,8 +43,10 @@ the bottom of `Employee.html` and `Admin.html`.
   (from the original Google Form) and are left alone; columns G onward were added by this project.
   `ensureRequestHeaders_()` rewrites the header row on every `doGet` so it's always self-healing.
   `COL` in `Code.gs` is the single source of truth for column positions.
-- **`Roles`** — `Role | Name | PIN`. Auto-created with placeholder rows on first load. Gates the
-  Processor/Approver/HR views in `Admin.html` (see Security below).
+- **`Roles`** — `Username | Password | Role | Name`, one row per staff account. `Role` is
+  `processor`, `approver`, `hr`, or `admin` (all-access — can open every section). Auto-created
+  with placeholder accounts on first load. This is the real login table for `Admin.html` (see
+  Security below).
 - **`Masterlist`** — `Last Name | First Name | Middle Name | Date of Birth` in columns A–D, plus
   a `Branches` reference list in column F (unrelated to the row it sits next to — just a flat
   list used to populate the searchable branch dropdown via `getBranchList()`). This is the
@@ -79,12 +81,17 @@ and its client-side checks are just UX, not security)
   It doesn't need to be shared because of `executeAs: USER_DEPLOYING`.
 - `doPost` (used only by the local-file preview bridge, see below) has a hardcoded function
   whitelist — it can never call anything outside that list, regardless of what a client sends.
-- Processor/Approver/HR actions all call `requireRole_(role, pin)` server-side — cannot be
-  bypassed from the client.
-- **Known open risk, not yet mitigated**: no rate-limiting/lockout on PIN attempts
-  (`verifyPin_`/`checkPin`). A 4-digit PIN is brute-forceable given enough requests. Flagged to
-  the project owner; add attempt throttling (e.g. a cooldown keyed in `Settings`) if this becomes
-  a real concern.
+- `Admin.html` is a real login (`login(username, password)`), not per-tab PINs. Every protected
+  server function calls `requireAccess_(username, password, requiredRole)`, which re-validates the
+  credentials on every single call (stateless) and passes if the account's role matches
+  `requiredRole` **or** is `admin` — admin always has access to every section. The client stores
+  the verified `{username, password, role, name}` once in `sessionStorage` after login so the user
+  isn't retyping credentials on every click; `Admin.html`'s `enterDashboard()` only wires up click
+  handlers for the tab(s) the role can reach — the other tabs are visually disabled and never even
+  attempt a request.
+- **Known open risk, not yet mitigated**: no rate-limiting/lockout on login attempts
+  (`findUser_`/`login`). Flagged to the project owner; add attempt throttling (e.g. a cooldown
+  keyed in `Settings`) if this becomes a real concern.
 
 ## Local development / testing without redeploying
 Both `Employee.html` and `Admin.html` have a `gs()` wrapper that detects whether
