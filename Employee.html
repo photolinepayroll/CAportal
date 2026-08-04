@@ -1,0 +1,697 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <base target="_top">
+  <!--
+    LOCAL PREVIEW BRIDGE: when this file is opened directly (not served by Apps Script),
+    google.script.run doesn't exist. Paste your deployed Web App /exec URL below and the
+    gs() wrapper further down will call it over fetch() instead — same live Sheet, same
+    live backend, just loaded from a local file for faster UI iteration.
+  -->
+  <script>window.LOCAL_WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbwdC3QF0TpRtcoHB1bTNtSHEQsgE8nR1RXUwOm95hddzON8HFObLxeRNz-XEr6MJ2IEyQ/exec';</script>
+  <style>
+  :root {
+    --fb-blue: #1877F2;
+    --fb-blue-dark: #145dbf;
+    --bg: #f0f2f5;
+    --text: #1a1a1a;
+    --text-secondary: #666;
+    --text-tertiary: #999;
+    --success-bg: #d4edda;
+    --success-text: #256029;
+    --error: #c0392b;
+    --error-bg: #fbe0dd;
+    --border: #e0e0e0;
+    --bot-bubble: #f0f0f0;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0; padding: 0; height: 100%; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+
+  .chat-app {
+    max-width: 480px; margin: 0 auto; min-height: 100vh; height: 100vh;
+    display: flex; flex-direction: column; background: #fff;
+    box-shadow: 0 0 24px rgba(0,0,0,0.06);
+  }
+
+  .chat-header {
+    background: var(--fb-blue); color: #fff; padding: 14px 16px;
+    display: flex; align-items: center; gap: 10px; flex: 0 0 auto;
+  }
+  .chat-avatar {
+    width: 36px; height: 36px; border-radius: 50%; background: rgba(255,255,255,0.2);
+    display: flex; align-items: center; justify-content: center; font-size: 18px; flex: 0 0 auto;
+  }
+  .chat-title { font-weight: 700; font-size: 16px; }
+  .chat-subtitle { font-size: 12px; opacity: 0.85; }
+
+  .chat-messages {
+    flex: 1 1 auto; overflow-y: auto; padding: 16px 12px;
+    display: flex; flex-direction: column; gap: 10px;
+  }
+
+  .msg-row { display: flex; }
+  .msg-row.bot { justify-content: flex-start; }
+  .msg-row.user { justify-content: flex-end; }
+
+  .bubble {
+    max-width: 88%; padding: 10px 14px; border-radius: 14px; font-size: 14px;
+    line-height: 1.5; white-space: pre-wrap; word-break: break-word;
+  }
+  .bubble.bot { background: var(--bot-bubble); color: var(--text); border-bottom-left-radius: 4px; }
+  .bubble.user { background: var(--fb-blue); color: #fff; border-bottom-right-radius: 4px; }
+
+  .error-bubble {
+    background: var(--error-bg); color: var(--error); border-radius: 14px; padding: 10px 14px;
+    font-size: 13px; max-width: 88%; border-bottom-left-radius: 4px;
+  }
+
+  .typing-indicator {
+    display: flex; gap: 4px; padding: 12px 14px; background: var(--bot-bubble);
+    border-radius: 14px; border-bottom-left-radius: 4px; width: fit-content;
+  }
+  .typing-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-tertiary); animation: bounce 1.2s infinite; }
+  .typing-dot:nth-child(2) { animation-delay: 0.2s; }
+  .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes bounce { 0%, 60%, 100% { transform: translateY(0); opacity: 0.5; } 30% { transform: translateY(-4px); opacity: 1; } }
+
+  .quick-replies { display: flex; flex-wrap: wrap; gap: 8px; padding: 4px 4px 2px; }
+  .quick-reply-btn {
+    border: 1.5px solid var(--fb-blue); color: var(--fb-blue); background: #fff;
+    border-radius: 18px; padding: 9px 16px; font-size: 13px; font-weight: 600; cursor: pointer;
+    transition: background .15s, color .15s;
+  }
+  .quick-reply-btn:hover:not(:disabled) { background: var(--fb-blue); color: #fff; }
+  .quick-reply-btn:disabled { opacity: 0.35; cursor: default; }
+
+  .chat-input-row { display: flex; gap: 8px; padding: 10px 12px; }
+  .chat-input-row input {
+    flex: 1; border: 1px solid var(--border); border-radius: 20px; padding: 10px 16px;
+    font-size: 14px; outline: none; min-width: 0;
+  }
+  .chat-input-row input:focus { border-color: var(--fb-blue); }
+  .chat-send-btn {
+    width: 40px; height: 40px; border-radius: 50%; background: var(--fb-blue); color: #fff;
+    border: none; cursor: pointer; font-size: 16px; display: flex; align-items: center;
+    justify-content: center; flex: 0 0 auto;
+  }
+  .chat-send-btn:disabled { opacity: 0.4; cursor: default; }
+
+  .chat-input-area { flex: 0 0 auto; border-top: 1px solid var(--border); background: #fff; }
+
+  .search-select-list { max-height: 180px; overflow-y: auto; padding: 6px 12px 10px; display: flex; flex-direction: column; gap: 4px; }
+  .search-select-item {
+    text-align: left; background: #fff; border: 1px solid var(--border); border-radius: 8px;
+    padding: 8px 12px; font-size: 13px; color: var(--text); cursor: pointer; transition: background .15s, border-color .15s;
+  }
+  .search-select-item:hover:not(:disabled) { background: #eef4ff; border-color: var(--fb-blue); }
+  .search-select-item:disabled { opacity: 0.4; cursor: default; }
+  .search-select-empty { font-size: 12px; color: var(--text-tertiary); padding: 4px 12px; }
+
+  .chat-footer {
+    text-align: center; font-size: 11px; color: var(--text-tertiary); padding: 6px 0 10px;
+  }
+  .chat-footer a { color: var(--text-tertiary); text-decoration: none; border-bottom: 1px dotted var(--text-tertiary); }
+  .chat-footer a:hover { color: var(--fb-blue); border-color: var(--fb-blue); }
+
+  .info-card { border: 1.5px solid var(--border); border-radius: 12px; overflow: hidden; max-width: 88%; background: #fff; }
+  .info-card-header { background: var(--fb-blue); color: #fff; padding: 10px 14px; font-weight: 700; font-size: 13px; }
+  .info-card-header.success { background: #2e7d4f; }
+  .info-card-body { padding: 12px 14px; display: flex; flex-direction: column; gap: 7px; }
+  .info-row { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; align-items: center; }
+  .info-row .label { color: var(--text-secondary); }
+  .info-row .value { font-weight: 600; text-align: right; }
+  .info-card-note { margin: 4px 0 0; font-size: 12px; color: var(--text-secondary); line-height: 1.5; }
+
+  .status-badge { display: inline-block; padding: 3px 10px; border-radius: 10px; font-size: 11px; font-weight: 700; text-transform: uppercase; }
+  .status-badge.approved { background: var(--success-bg); color: var(--success-text); }
+  .status-badge.rejected { background: var(--error-bg); color: var(--error); }
+  .status-badge.pending, .status-badge.processing { background: #e3edfb; color: var(--fb-blue); }
+
+  .spinner {
+    width: 14px; height: 14px; border: 2px solid rgba(0,0,0,0.12); border-top-color: var(--fb-blue);
+    border-radius: 50%; animation: spin 0.6s linear infinite; display: inline-block; vertical-align: middle;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  @media (max-width: 520px) {
+    .chat-app { box-shadow: none; }
+  }
+  </style>
+</head>
+<body>
+  <div class="chat-app">
+    <header class="chat-header">
+      <div class="chat-avatar">🪙</div>
+      <div>
+        <div class="chat-title">Photoline CA Assistant</div>
+        <div class="chat-subtitle">Cash Advance Chatbot</div>
+      </div>
+    </header>
+
+    <div class="chat-messages" id="chatMessages"></div>
+
+    <div class="chat-input-area">
+      <div id="chatInputArea"></div>
+      <div class="chat-footer"><a href="?page=admin">Staff Access</a></div>
+    </div>
+  </div>
+
+  <script>
+    // ================= backend bridge (unchanged from the form-based version) =================
+    function gs(fnName) {
+      var args = Array.prototype.slice.call(arguments, 1);
+
+      if (window.google && window.google.script && window.google.script.run) {
+        return new Promise(function (resolve, reject) {
+          google.script.run
+            .withSuccessHandler(resolve)
+            .withFailureHandler(function (err) { reject(err); })
+            [fnName].apply(null, args);
+        });
+      }
+
+      // Local preview: no google.script.run available, call the live deployed Web App instead.
+      var url = window.LOCAL_WEB_APP_URL;
+      if (!url || url.indexOf('PASTE_YOUR_DEPLOYED_EXEC_URL_HERE') !== -1) {
+        return Promise.reject(new Error('Set LOCAL_WEB_APP_URL at the top of this file to your deployed /exec URL first.'));
+      }
+      return fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // avoids a CORS preflight Apps Script can't answer
+        body: JSON.stringify({ fn: fnName, args: args })
+      })
+        .then(function (res) { return res.json(); })
+        .then(function (payload) {
+          if (payload.success) return payload.result;
+          throw new Error(payload.error || 'Request failed');
+        });
+    }
+
+    function formatCurrency(amount) {
+      var n = Number(amount) || 0;
+      return '₱' + n.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    function formatDate(value) {
+      if (!value) return '—';
+      var d = new Date(value);
+      if (isNaN(d.getTime())) return String(value);
+      return d.toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: 'numeric' });
+    }
+
+    // ================= chat rendering primitives =================
+    var messagesEl = document.getElementById('chatMessages');
+    var inputAreaEl = document.getElementById('chatInputArea');
+
+    function scrollToBottom() { messagesEl.scrollTop = messagesEl.scrollHeight; }
+
+    function addBotBubble(text) {
+      var row = document.createElement('div');
+      row.className = 'msg-row bot';
+      var bubble = document.createElement('div');
+      bubble.className = 'bubble bot';
+      bubble.textContent = text;
+      row.appendChild(bubble);
+      messagesEl.appendChild(row);
+      scrollToBottom();
+    }
+
+    function addUserBubble(text) {
+      var row = document.createElement('div');
+      row.className = 'msg-row user';
+      var bubble = document.createElement('div');
+      bubble.className = 'bubble user';
+      bubble.textContent = text;
+      row.appendChild(bubble);
+      messagesEl.appendChild(row);
+      scrollToBottom();
+    }
+
+    function addErrorBubble(text) {
+      var row = document.createElement('div');
+      row.className = 'msg-row bot';
+      var bubble = document.createElement('div');
+      bubble.className = 'error-bubble';
+      bubble.textContent = text;
+      row.appendChild(bubble);
+      messagesEl.appendChild(row);
+      scrollToBottom();
+    }
+
+    function addCardHtml(html) {
+      var row = document.createElement('div');
+      row.className = 'msg-row bot';
+      row.innerHTML = html;
+      messagesEl.appendChild(row);
+      scrollToBottom();
+    }
+
+    function showTyping() {
+      var row = document.createElement('div');
+      row.className = 'msg-row bot';
+      row.id = 'typingRow';
+      var ind = document.createElement('div');
+      ind.className = 'typing-indicator';
+      ind.innerHTML = '<span class="typing-dot"></span><span class="typing-dot"></span><span class="typing-dot"></span>';
+      row.appendChild(ind);
+      messagesEl.appendChild(row);
+      scrollToBottom();
+    }
+
+    function hideTyping() {
+      var el = document.getElementById('typingRow');
+      if (el) el.remove();
+    }
+
+    function botSay(text, delay) {
+      return new Promise(function (resolve) {
+        showTyping();
+        setTimeout(function () {
+          hideTyping();
+          addBotBubble(text);
+          resolve();
+        }, delay || 550);
+      });
+    }
+
+    function clearInputArea() { inputAreaEl.innerHTML = ''; }
+
+    function renderTextInput(placeholder, type, onSubmit) {
+      inputAreaEl.innerHTML = '';
+      var row = document.createElement('div');
+      row.className = 'chat-input-row';
+      var input = document.createElement('input');
+      input.type = type || 'text';
+      input.placeholder = placeholder || '';
+      if (type === 'number') input.step = 'any';
+      var btn = document.createElement('button');
+      btn.className = 'chat-send-btn';
+      btn.type = 'button';
+      btn.textContent = '➤';
+      row.appendChild(input);
+      row.appendChild(btn);
+      inputAreaEl.appendChild(row);
+      input.focus();
+
+      function submit() {
+        var val = input.value.trim();
+        if (!val) return;
+        btn.disabled = true;
+        input.disabled = true;
+        onSubmit(val);
+      }
+      btn.addEventListener('click', submit);
+      input.addEventListener('keydown', function (e) { if (e.key === 'Enter') submit(); });
+    }
+
+    function renderTextInputWithSkip(placeholder, skipLabel, skipValue, onSubmit) {
+      inputAreaEl.innerHTML = '';
+      var row = document.createElement('div');
+      row.className = 'chat-input-row';
+      var input = document.createElement('input');
+      input.type = 'text';
+      input.placeholder = placeholder || '';
+      var btn = document.createElement('button');
+      btn.className = 'chat-send-btn';
+      btn.type = 'button';
+      btn.textContent = '➤';
+      row.appendChild(input);
+      row.appendChild(btn);
+      inputAreaEl.appendChild(row);
+
+      var skipWrap = document.createElement('div');
+      skipWrap.className = 'quick-replies';
+      var skipBtn = document.createElement('button');
+      skipBtn.className = 'quick-reply-btn';
+      skipBtn.type = 'button';
+      skipBtn.textContent = skipLabel;
+      skipWrap.appendChild(skipBtn);
+      inputAreaEl.appendChild(skipWrap);
+      input.focus();
+
+      function lock() { btn.disabled = true; input.disabled = true; skipBtn.disabled = true; }
+
+      function submit() {
+        var val = input.value.trim();
+        if (!val) return;
+        lock();
+        onSubmit(val, val);
+      }
+      btn.addEventListener('click', submit);
+      input.addEventListener('keydown', function (e) { if (e.key === 'Enter') submit(); });
+      skipBtn.addEventListener('click', function () {
+        lock();
+        onSubmit(skipValue, skipLabel);
+      });
+    }
+
+    var branchListCache = null;
+
+    function loadBranchList() {
+      if (branchListCache) return Promise.resolve(branchListCache);
+      return gs('getBranchList').then(function (list) {
+        branchListCache = list;
+        return list;
+      });
+    }
+
+    /** Type-to-search select: only clicking a matched suggestion submits, so the stored branch name always matches the Masterlist exactly. */
+    function renderSearchSelect(placeholder, onSubmit) {
+      inputAreaEl.innerHTML = '';
+      var wrap = document.createElement('div');
+
+      var row = document.createElement('div');
+      row.className = 'chat-input-row';
+      var input = document.createElement('input');
+      input.type = 'text';
+      input.placeholder = placeholder || 'Maghanap...';
+      row.appendChild(input);
+      wrap.appendChild(row);
+
+      var list = document.createElement('div');
+      list.className = 'search-select-list';
+      list.innerHTML = '<div class="search-select-empty">Naglo-load ng listahan ng branches…</div>';
+      wrap.appendChild(list);
+
+      inputAreaEl.appendChild(wrap);
+      input.focus();
+
+      var allBranches = [];
+      var ready = false;
+
+      function filterOptions(query) {
+        var q = query.trim().toLowerCase();
+        var pool = !q ? allBranches : allBranches.filter(function (b) { return b.toLowerCase().indexOf(q) !== -1; });
+        return pool.slice(0, 8);
+      }
+
+      function renderOptions(options) {
+        if (!ready) return;
+        if (!options.length) {
+          list.innerHTML = '<div class="search-select-empty">Walang nahanap na branch.</div>';
+          return;
+        }
+        list.innerHTML = '';
+        options.forEach(function (b) {
+          var item = document.createElement('button');
+          item.type = 'button';
+          item.className = 'search-select-item';
+          item.textContent = b;
+          item.addEventListener('click', function () {
+            input.disabled = true;
+            Array.prototype.forEach.call(list.querySelectorAll('button'), function (btn) { btn.disabled = true; });
+            onSubmit(b, b);
+          });
+          list.appendChild(item);
+        });
+      }
+
+      loadBranchList().then(function (branches) {
+        ready = true;
+        allBranches = branches;
+        renderOptions(filterOptions(''));
+      }).catch(function () {
+        list.innerHTML = '<div class="search-select-empty">Hindi ma-load ang listahan ng branches. Subukan ulit.</div>';
+      });
+
+      input.addEventListener('input', function () { renderOptions(filterOptions(input.value)); });
+    }
+
+    function renderQuickReplies(options, onPick) {
+      inputAreaEl.innerHTML = '';
+      var wrap = document.createElement('div');
+      wrap.className = 'quick-replies';
+      options.forEach(function (opt) {
+        var btn = document.createElement('button');
+        btn.className = 'quick-reply-btn';
+        btn.type = 'button';
+        btn.textContent = opt.label;
+        btn.addEventListener('click', function () {
+          Array.prototype.forEach.call(wrap.querySelectorAll('button'), function (b) { b.disabled = true; });
+          onPick(opt);
+        });
+        wrap.appendChild(btn);
+      });
+      inputAreaEl.appendChild(wrap);
+    }
+
+    function infoRow(label, value) {
+      return '<div class="info-row"><span class="label">' + label + '</span><span class="value">' + value + '</span></div>';
+    }
+
+    function offerMenuButton() {
+      renderQuickReplies([{ label: '🏠 Bumalik sa Menu', value: 'menu' }], function (opt) {
+        addUserBubble(opt.label);
+        clearInputArea();
+        startGreeting();
+      });
+    }
+
+    // ================= greeting / menu =================
+    var chatState = { step: 'greeting', answers: {}, stepIndex: 0 };
+
+    function startGreeting() {
+      chatState = { step: 'greeting', answers: {}, stepIndex: 0 };
+      clearInputArea();
+      botSay('Kumusta! 👋 Ako ang Photoline CA Assistant. Ano ang gusto mong gawin?', 400).then(function () {
+        renderQuickReplies([
+          { label: '🆕 Mag-request ng Cash Advance', value: 'new' },
+          { label: '🔍 I-check ang status ng request ko', value: 'status' }
+        ], function (opt) {
+          addUserBubble(opt.label);
+          clearInputArea();
+          if (opt.value === 'new') startNewRequestFlow();
+          else startStatusCheckFlow();
+        });
+      });
+    }
+
+    // ================= Branch A: New Request =================
+    // Phase 1: verify the requester is a real employee BEFORE asking any CA details at all.
+    var IDENTITY_STEPS = [
+      { key: 'lastName', prompt: 'Sige! Simulan natin. Ano ang apelyido (last name) mo?', type: 'text', placeholder: 'hal. Dela Cruz' },
+      { key: 'firstName', prompt: 'Ano naman ang first name mo?', type: 'text', placeholder: 'hal. Juan' },
+      { key: 'middleName', prompt: 'Ano ang gitnang pangalan (middle name) mo? Kung wala, i-tap na lang ang "Wala".', type: 'text-skip', placeholder: 'Middle Name', skipLabel: 'Wala akong Middle Name', skipValue: 'None' },
+      { key: 'birthday', prompt: 'Para sa verification, ano ang petsa ng kaarawan mo?', type: 'date', placeholder: '' }
+    ];
+
+    // Phase 2: the actual CA request fields, only reached after identity is verified. Branch lives here,
+    // not in identity — it's just per-request context (same area can have multiple malls/branches).
+    var CA_DETAIL_STEPS = [
+      { key: 'branch', prompt: 'Verified ka na! Anong branch mo?', type: 'search-select', placeholder: 'I-type para maghanap ng branch...' },
+      { key: 'amount', prompt: 'Magkano ang gusto mong i-advance?', type: 'quick', options: [
+        { label: '₱500', value: 500 }, { label: '₱1,000', value: 1000 }, { label: '₱1,500', value: 1500 }, { label: '₱2,000', value: 2000 }
+      ] },
+      { key: 'daysPresent', prompt: 'Ilang Working Days ang naitala mo ngayong cutoff?', type: 'number', placeholder: 'hal. 12' },
+      { key: 'purpose', prompt: 'Ano ang dahilan/purpose ng CA request mo?', type: 'text', placeholder: 'Dahilan' }
+    ];
+
+    // Mirrors computeCutoffPeriod_() in Code.gs — display-only preview before the server confirms it.
+    function computeCutoffPeriodPreview() {
+      var dayOfMonth = new Date().getDate();
+      return (dayOfMonth >= 11 && dayOfMonth <= 25) ? '11-25' : '26-10';
+    }
+
+    // Mirrors computeCreditingDate_() in Code.gs — display-only preview before the server confirms it.
+    function computeNextFridayPreview() {
+      var now = new Date();
+      var dow = now.getDay();
+      var daysUntilFriday = (5 - dow + 7) % 7;
+      now.setDate(now.getDate() + daysUntilFriday);
+      return now;
+    }
+
+    /** Generic step-runner shared by the identity phase and the CA-details phase. */
+    function runSteps(steps, index, onDone) {
+      if (index >= steps.length) { onDone(); return; }
+      var step = steps[index];
+      botSay(step.prompt).then(function () {
+        function next(value, label) {
+          addUserBubble(label);
+          chatState.answers[step.key] = value;
+          clearInputArea();
+          runSteps(steps, index + 1, onDone);
+        }
+        if (step.type === 'quick') {
+          renderQuickReplies(step.options, function (opt) { next(opt.value, opt.label); });
+        } else if (step.type === 'text-skip') {
+          renderTextInputWithSkip(step.placeholder, step.skipLabel, step.skipValue, function (val, label) { next(val, label); });
+        } else if (step.type === 'search-select') {
+          renderSearchSelect(step.placeholder, function (val, label) { next(val, label); });
+        } else {
+          renderTextInput(step.placeholder, step.type, function (val) { next(val, val); });
+        }
+      });
+    }
+
+    function startNewRequestFlow() {
+      chatState.step = 'new-request';
+      chatState.answers = {};
+      showTyping();
+      gs('getCaWindowStatus').then(function (status) {
+        hideTyping();
+        if (!status.open) {
+          addBotBubble('Sarado muna ang pagtanggap ng CA requests ngayon. Bukas lang ito tuwing Lunes hanggang Miyerkules — subukan ka na lang ulit sa mga araw na iyon.');
+          offerMenuButton();
+          return;
+        }
+        runSteps(IDENTITY_STEPS, 0, verifyThenAskCaDetails);
+      }).catch(function (err) {
+        hideTyping();
+        addErrorBubble('May naganap na error: ' + (err && err.message ? err.message : err));
+        offerMenuButton();
+      });
+    }
+
+    function verifyThenAskCaDetails() {
+      showTyping();
+      var a = chatState.answers;
+      gs('verifyIdentity', a.lastName, a.firstName, a.middleName, a.birthday).then(function (valid) {
+        hideTyping();
+        if (!valid) {
+          addErrorBubble('Hindi ka na-verify sa aming listahan ng empleyado. Siguraduhing tama ang last name, first name, middle name, at kaarawan. Kontakin ang HR kung tama na lahat ng detalye mo.');
+          renderQuickReplies([
+            { label: '🔁 Subukan Ulit', value: 'retry' },
+            { label: '🏠 Bumalik sa Menu', value: 'menu' }
+          ], function (opt) {
+            addUserBubble(opt.label);
+            clearInputArea();
+            if (opt.value === 'retry') startNewRequestFlow(); else startGreeting();
+          });
+          return;
+        }
+        runSteps(CA_DETAIL_STEPS, 0, showReviewCard);
+      }).catch(function (err) {
+        hideTyping();
+        addErrorBubble('May naganap na error: ' + (err && err.message ? err.message : err));
+        offerMenuButton();
+      });
+    }
+
+    function showReviewCard() {
+      clearInputArea();
+      var a = chatState.answers;
+      var html = '<div class="info-card">'
+        + '<div class="info-card-header">Review ang Request Mo</div>'
+        + '<div class="info-card-body">'
+        + infoRow('Branch', a.branch)
+        + infoRow('Pangalan', a.lastName + ', ' + a.firstName)
+        + infoRow('Halaga', formatCurrency(a.amount))
+        + infoRow('Crediting Date', formatDate(computeNextFridayPreview()))
+        + infoRow('Cutoff', computeCutoffPeriodPreview())
+        + infoRow('Working Days', a.daysPresent)
+        + infoRow('Purpose', a.purpose)
+        + '</div></div>';
+      botSay('Heto ang buod ng request mo — tama ba lahat?', 400).then(function () {
+        addCardHtml(html);
+        renderQuickReplies([
+          { label: '✅ Confirm', value: 'confirm' },
+          { label: '✏️ Ulitin', value: 'restart' }
+        ], function (opt) {
+          addUserBubble(opt.label);
+          clearInputArea();
+          if (opt.value === 'confirm') submitNewRequest();
+          else startNewRequestFlow();
+        });
+      });
+    }
+
+    function submitNewRequest() {
+      showTyping();
+      gs('createRequest', chatState.answers).then(function (result) {
+        hideTyping();
+        if (result.success) {
+          var html = '<div class="info-card"><div class="info-card-header success">✅ Naisumite na!</div><div class="info-card-body">'
+            + infoRow('Reference ID', result.requestId)
+            + infoRow('Cutoff', result.cutoffPeriod)
+            + infoRow('Crediting Date', formatDate(result.creditingDate))
+            + '<p class="info-card-note">Ipoproseso na ang request mo. Puwede mo itong i-check anumang oras dito sa chat.</p>'
+            + '</div></div>';
+          addCardHtml(html);
+          offerMenuButton();
+        } else {
+          addErrorBubble(result.errors.join(' '));
+          renderQuickReplies([
+            { label: '🔁 Subukan Ulit', value: 'retry' },
+            { label: '🏠 Bumalik sa Menu', value: 'menu' }
+          ], function (opt) {
+            addUserBubble(opt.label);
+            clearInputArea();
+            if (opt.value === 'retry') startNewRequestFlow(); else startGreeting();
+          });
+        }
+      }).catch(function (err) {
+        hideTyping();
+        addErrorBubble('May naganap na error: ' + (err && err.message ? err.message : err));
+        offerMenuButton();
+      });
+    }
+
+    // ================= Branch B: Check Status =================
+    var STATUS_CHECK_STEPS = [
+      { key: 'lastName', prompt: 'Para sa seguridad, i-verify muna kita. Anong last name mo?', type: 'text', placeholder: 'Last Name' },
+      { key: 'requestId', prompt: 'Ano ang Request Number mo? (nasa confirmation ito noong nag-submit ka, hal. SCA#000007)', type: 'text', placeholder: 'SCA#000007' }
+    ];
+
+    function startStatusCheckFlow() {
+      chatState.step = 'status-check';
+      chatState.answers = {};
+      runSteps(STATUS_CHECK_STEPS, 0, function () {
+        lookupStatus(chatState.answers.lastName, chatState.answers.requestId);
+      });
+    }
+
+    function statusCardHtml(r) {
+      var badgeClass = String(r.status || '').toLowerCase();
+      var extraLine = '';
+      if (r.status === 'Rejected') extraLine = infoRow('Dahilan', r.approverRemarks || r.processorRemarks || '—');
+      if (r.status === 'Approved') extraLine = infoRow('Na-approve noong', formatDate(r.dateApproved));
+      return '<div class="info-card"><div class="info-card-header">' + formatDate(r.timestamp) + '</div><div class="info-card-body">'
+        + infoRow('Pangalan', r.name)
+        + infoRow('Request ID', r.requestId)
+        + infoRow('Halaga', formatCurrency(r.amount))
+        + infoRow('Cutoff', r.cutoffPeriod)
+        + infoRow('Purpose', r.purpose)
+        + '<div class="info-row"><span class="label">Status</span><span class="status-badge ' + badgeClass + '">' + r.status + '</span></div>'
+        + extraLine
+        + '</div></div>';
+    }
+
+    function lookupStatus(lastName, requestId) {
+      showTyping();
+      gs('getRequestByLastNameAndId', lastName, requestId).then(function (rows) {
+        hideTyping();
+        if (!rows.length) {
+          addBotBubble('Walang nakitang request na tumutugma sa Last Name at Request Number na ibinigay mo. Siguraduhing tama ang parehong detalye.');
+          renderQuickReplies([
+            { label: '🔁 Subukan Ulit', value: 'retry' },
+            { label: '🏠 Bumalik sa Menu', value: 'menu' }
+          ], function (opt) {
+            addUserBubble(opt.label);
+            clearInputArea();
+            if (opt.value === 'retry') startStatusCheckFlow(); else startGreeting();
+          });
+          return;
+        }
+        botSay('Nakita ko ang ' + rows.length + ' request mo:', 300).then(function () {
+          rows.forEach(function (r) { addCardHtml(statusCardHtml(r)); });
+          offerMenuButton();
+        });
+      }).catch(function (err) {
+        hideTyping();
+        addErrorBubble('May naganap na error: ' + (err && err.message ? err.message : err));
+        offerMenuButton();
+      });
+    }
+
+    // ================= boot =================
+    document.addEventListener('DOMContentLoaded', startGreeting);
+  </script>
+</body>
+</html>

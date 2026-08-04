@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <!--
+    LOCAL PREVIEW BRIDGE: when this file is opened directly (not served by Apps Script),
+    google.script.run doesn't exist. Paste your deployed Web App /exec URL below and the
+    gs() wrapper further down will call it over fetch() instead — same live Sheet, same
+    live backend, just loaded from a local file for faster UI iteration.
+  -->
+  <script>window.LOCAL_WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbwdC3QF0TpRtcoHB1bTNtSHEQsgE8nR1RXUwOm95hddzON8HFObLxeRNz-XEr6MJ2IEyQ/exec';</script>
+  <style>
+  @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap');
+
+  :root {
+    --ink: #1F2D3D;
+    --paper: #EDEAE2;
+    --paper-card: #F5F2EA;
+    --paper-line: #d9d3c3;
+    --approved: #3B6255;
+    --rejected: #A63D33;
+    --pending: #C08A2E;
+    --slate: #5B6570;
+    --shadow-ink: rgba(31, 45, 61, 0.18);
+    --font-display: 'Fraunces', 'Iowan Old Style', Georgia, serif;
+    --font-body: 'Public Sans', -apple-system, sans-serif;
+    --font-mono: 'IBM Plex Mono', 'Courier New', monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0; padding: 0; background-color: var(--paper); color: var(--ink);
+    font-family: var(--font-body); -webkit-font-smoothing: antialiased;
+  }
+
+  body {
+    background-image:
+      repeating-linear-gradient(to bottom, transparent 0px, transparent 27px, rgba(31, 45, 61, 0.055) 28px),
+      radial-gradient(circle at 1px 1px, rgba(31,45,61,0.06) 1px, transparent 0);
+    background-size: 100% 28px, 3px 3px;
+    min-height: 100vh;
+  }
+
+  .ledger-shell { max-width: 1080px; margin: 0 auto; padding: 28px 20px 80px; }
+
+  .ledger-header {
+    display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 8px;
+    border-bottom: 3px double var(--ink); padding-bottom: 14px; margin-bottom: 22px;
+  }
+  .ledger-header .wordmark {
+    font-family: var(--font-display); font-weight: 700; font-size: clamp(24px, 4.5vw, 34px);
+    letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink); margin: 0;
+  }
+  .ledger-header .tagline { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--slate); }
+
+  .ledger-nav { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: -1px; position: relative; z-index: 1; }
+  .ledger-tab {
+    font-family: var(--font-body); font-weight: 600; font-size: 13px; letter-spacing: 0.03em; text-transform: uppercase;
+    color: var(--slate); background: #ddd7c6; border: 1px solid var(--paper-line); border-bottom: none;
+    padding: 10px 18px 12px; cursor: pointer; clip-path: polygon(6% 0, 94% 0, 100% 100%, 0% 100%);
+    transition: transform 0.15s ease, color 0.15s ease, background 0.15s ease; transform: translateY(4px);
+  }
+  .ledger-tab:hover { color: var(--ink); transform: translateY(2px); }
+  .ledger-tab.active { background: var(--paper-card); color: var(--ink); transform: translateY(0); box-shadow: 0 -2px 8px var(--shadow-ink); }
+  .ledger-tab .lock-icon { opacity: 0.6; margin-left: 4px; font-size: 11px; }
+
+  .ledger-card {
+    background: var(--paper-card); border: 1px solid var(--paper-line); border-radius: 2px;
+    box-shadow: 0 6px 18px var(--shadow-ink); padding: 28px; position: relative;
+  }
+
+  .view-panel { display: none; }
+  .view-panel.active { display: block; animation: riseIn 0.3s ease; }
+  @keyframes riseIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+
+  .panel-title { font-family: var(--font-display); font-size: 24px; font-weight: 600; margin: 0 0 4px; }
+  .panel-subtitle { font-family: var(--font-mono); font-size: 12px; color: var(--slate); text-transform: uppercase; letter-spacing: 0.08em; margin: 0 0 24px; }
+
+  .btn {
+    font-family: var(--font-body); font-weight: 700; font-size: 13px; letter-spacing: 0.05em; text-transform: uppercase;
+    border: 2px solid var(--ink); background: var(--ink); color: var(--paper-card); padding: 12px 22px;
+    border-radius: 2px; cursor: pointer; transition: transform 0.12s ease, box-shadow 0.12s ease;
+  }
+  .btn:hover { transform: translateY(-1px); box-shadow: 0 4px 10px var(--shadow-ink); }
+  .btn:active { transform: translateY(0); box-shadow: none; }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
+  .btn-outline { background: transparent; color: var(--ink); }
+  .btn-approve { border-color: var(--approved); background: var(--approved); }
+  .btn-reject { border-color: var(--rejected); background: var(--rejected); }
+  .btn-reject.btn-outline, .btn-approve.btn-outline { background: transparent; }
+  .btn-reject.btn-outline { color: var(--rejected); }
+  .btn-approve.btn-outline { color: var(--approved); }
+  .btn-row { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 20px; }
+  .btn-row.tight { margin-top: 0; margin-bottom: 20px; }
+
+  textarea {
+    width: 100%; font-family: var(--font-body); font-size: 15px; color: var(--ink); background: #fffdf8;
+    border: 1px solid var(--paper-line); border-radius: 2px; padding: 10px 12px; min-height: 72px; resize: vertical;
+  }
+  textarea:focus { outline: none; border-color: var(--ink); box-shadow: 0 0 0 3px rgba(31,45,61,0.08); }
+
+  .ledger-table { width: 100%; border-collapse: collapse; margin-top: 4px; }
+  .ledger-table th {
+    font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--slate);
+    text-align: left; padding: 8px 10px; border-bottom: 2px solid var(--ink);
+  }
+  .ledger-table td { padding: 12px 10px; border-bottom: 1px solid var(--paper-line); font-size: 14px; vertical-align: top; }
+  .ledger-table tbody tr:hover { background: rgba(31,45,61,0.03); }
+  .ledger-table .num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+  .ledger-table .req-id { font-family: var(--font-mono); font-size: 11px; color: var(--slate); }
+
+  .empty-state { text-align: center; padding: 40px 20px; color: var(--slate); font-family: var(--font-mono); font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; }
+
+  .row-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .row-actions .btn { padding: 7px 12px; font-size: 11px; }
+
+  .review-inline { margin-top: 10px; padding: 12px; background: rgba(31,45,61,0.03); border: 1px dashed var(--paper-line); display: none; }
+  .review-inline.show { display: block; }
+  .review-inline textarea { margin-bottom: 10px; }
+  .atd-toggle { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; font-family: var(--font-mono); font-size: 12px; }
+
+  .modal-backdrop {
+    position: fixed; inset: 0; background: rgba(31,45,61,0.55);
+    display: none; align-items: center; justify-content: center; z-index: 50; padding: 20px;
+  }
+  .modal-backdrop.show { display: flex; }
+  .modal-card { background: var(--paper-card); border: 2px solid var(--ink); max-width: 360px; width: 100%; padding: 26px; position: relative; }
+  .modal-card::after { content: ''; position: absolute; top: 10px; right: 10px; bottom: 10px; left: 10px; border: 1px solid var(--pending); pointer-events: none; }
+  .modal-title { font-family: var(--font-display); font-size: 18px; font-weight: 700; margin: 0 0 4px; }
+  .modal-sub { font-family: var(--font-mono); font-size: 11px; color: var(--slate); text-transform: uppercase; letter-spacing: 0.08em; margin: 0 0 18px; }
+  .modal-card input {
+    width: 100%; font-family: var(--font-mono); letter-spacing: 0.3em; text-align: center; font-size: 20px;
+    color: var(--ink); background: #fffdf8; border: 1px solid var(--paper-line); border-radius: 2px; padding: 10px 12px;
+  }
+  .modal-card input:focus { outline: none; border-color: var(--ink); box-shadow: 0 0 0 3px rgba(31,45,61,0.08); }
+  .modal-actions { display: flex; gap: 10px; margin-top: 16px; }
+  .modal-actions .btn { flex: 1; }
+  .form-msg { font-size: 13px; margin-top: 14px; padding: 10px 12px; border-radius: 2px; display: none; }
+  .form-msg.show { display: block; }
+  .form-msg.error { background: rgba(166,61,51,0.1); color: var(--rejected); border: 1px solid rgba(166,61,51,0.3); }
+
+  #toast {
+    position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%) translateY(20px);
+    background: var(--ink); color: var(--paper-card); font-family: var(--font-body); font-size: 13px;
+    padding: 12px 20px; border-radius: 3px; opacity: 0; pointer-events: none; transition: all 0.25s ease; z-index: 100;
+    box-shadow: 0 8px 20px rgba(0,0,0,0.25);
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  #toast.error { background: var(--rejected); }
+  #toast.success { background: var(--approved); }
+
+  .summary-total { margin-top: 16px; font-family: var(--font-mono); font-size: 13px; }
+
+  .window-panel {
+    border: 1px solid var(--paper-line); border-radius: 4px; padding: 14px 16px; margin-bottom: 20px;
+    background: rgba(31,45,61,0.02); display: flex; flex-wrap: wrap; align-items: center; gap: 12px; justify-content: space-between;
+  }
+  .window-status { font-family: var(--font-mono); font-size: 13px; }
+  .window-status .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+  .window-status .dot.open { background: var(--approved); }
+  .window-status .dot.closed { background: var(--rejected); }
+  .window-panel .row-actions .btn[data-override].active { outline: 2px solid var(--ink); outline-offset: 1px; }
+
+  footer.ledger-footer {
+    text-align: center; font-family: var(--font-mono); font-size: 11px; color: var(--slate);
+    letter-spacing: 0.06em; margin-top: 40px; text-transform: uppercase;
+  }
+  .staff-link { color: var(--slate); text-decoration: none; border-bottom: 1px dotted var(--slate); }
+  .staff-link:hover { color: var(--ink); border-color: var(--ink); }
+  </style>
+</head>
+<body>
+  <div class="ledger-shell">
+    <header class="ledger-header">
+      <div>
+        <p class="wordmark">Photoline &middot; Staff</p>
+        <p class="tagline">Cash Advance Review Desk</p>
+      </div>
+      <p class="tagline" id="todayLabel"></p>
+    </header>
+
+    <nav class="ledger-nav">
+      <div class="ledger-tab" data-view="processor">Processor <span class="lock-icon">&#128274;</span></div>
+      <div class="ledger-tab" data-view="approver">Approver <span class="lock-icon">&#128274;</span></div>
+      <div class="ledger-tab" data-view="hr">HR Summary <span class="lock-icon">&#128274;</span></div>
+    </nav>
+
+    <div class="ledger-card">
+
+      <!-- ===== Processor Queue ===== -->
+      <section class="view-panel" id="view-processor">
+        <p class="panel-title">Processor Queue</p>
+        <p class="panel-subtitle">Validate completeness and Working Days, then forward to the Approver</p>
+        <div id="proc-results"></div>
+      </section>
+
+      <!-- ===== Approver Queue ===== -->
+      <section class="view-panel" id="view-approver">
+        <p class="panel-title">Approver Queue</p>
+        <p class="panel-subtitle">Confirm ATD compliance (per auditor verification), then approve or reject</p>
+        <div id="appr-results"></div>
+      </section>
+
+      <!-- ===== HR Summary ===== -->
+      <section class="view-panel" id="view-hr">
+        <p class="panel-title">HR Disbursement Summary</p>
+        <p class="panel-subtitle">Approved requests, ready for disbursement</p>
+
+        <div class="window-panel" id="ca-window-panel">
+          <div class="window-status" id="ca-window-status">Loading CA window status…</div>
+          <div class="row-actions">
+            <button class="btn btn-outline" data-override="AUTO" type="button">Auto (Mon–Wed)</button>
+            <button class="btn btn-approve" data-override="FORCE_OPEN" type="button">Force Open</button>
+            <button class="btn btn-reject" data-override="FORCE_CLOSED" type="button">Force Close</button>
+          </div>
+        </div>
+
+        <div class="btn-row tight">
+          <button class="btn btn-outline" id="hr-refresh" type="button">Refresh</button>
+          <button class="btn" id="hr-export" type="button">Export CSV</button>
+        </div>
+
+        <div id="hr-results"></div>
+      </section>
+
+    </div>
+
+    <footer class="ledger-footer">
+      Photoline &middot; Internal Use Only &middot; CA Portal &middot; <a class="staff-link" href="?">Employee Portal</a>
+    </footer>
+  </div>
+
+  <div class="modal-backdrop" id="pinBackdrop">
+    <div class="modal-card">
+      <p class="modal-title">Authorization Required</p>
+      <p class="modal-sub">Enter <span id="pinModalRole"></span> PIN</p>
+      <input type="password" id="pinInput" inputmode="numeric" maxlength="8" placeholder="&bull;&bull;&bull;&bull;">
+      <p class="form-msg error" id="pinModalError">Incorrect PIN. Please try again.</p>
+      <div class="modal-actions">
+        <button class="btn btn-outline" id="pinCancelBtn" type="button">Cancel</button>
+        <button class="btn" id="pinSubmitBtn" type="button">Unlock</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast"></div>
+
+  <script>
+    document.getElementById('todayLabel').textContent = new Date().toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' });
+
+    function gs(fnName) {
+      var args = Array.prototype.slice.call(arguments, 1);
+
+      if (window.google && window.google.script && window.google.script.run) {
+        return new Promise(function (resolve, reject) {
+          google.script.run
+            .withSuccessHandler(resolve)
+            .withFailureHandler(function (err) { reject(err); })
+            [fnName].apply(null, args);
+        });
+      }
+
+      // Local preview: no google.script.run available, call the live deployed Web App instead.
+      var url = window.LOCAL_WEB_APP_URL;
+      if (!url || url.indexOf('PASTE_YOUR_DEPLOYED_EXEC_URL_HERE') !== -1) {
+        return Promise.reject(new Error('Set LOCAL_WEB_APP_URL at the top of this file to your deployed /exec URL first.'));
+      }
+      return fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // avoids a CORS preflight Apps Script can't answer
+        body: JSON.stringify({ fn: fnName, args: args })
+      })
+        .then(function (res) { return res.json(); })
+        .then(function (payload) {
+          if (payload.success) return payload.result;
+          throw new Error(payload.error || 'Request failed');
+        });
+    }
+
+    var toastTimer;
+    function toast(message, type) {
+      var el = document.getElementById('toast');
+      el.textContent = message;
+      el.className = 'show' + (type ? ' ' + type : '');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(function () { el.className = ''; }, 3800);
+    }
+
+    function formatCurrency(amount) {
+      var n = Number(amount) || 0;
+      return '₱' + n.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    function formatDate(value) {
+      if (!value) return '—';
+      var d = new Date(value);
+      if (isNaN(d.getTime())) return String(value);
+      return d.toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: 'numeric' });
+    }
+
+    // ---------- role credential cache (per browser tab) ----------
+    var ROLE_CREDS_KEY = 'ca_portal_role_creds';
+
+    function getStoredPin(role) {
+      try {
+        var store = JSON.parse(sessionStorage.getItem(ROLE_CREDS_KEY) || '{}');
+        return store[role] || null;
+      } catch (e) { return null; }
+    }
+
+    function storePin(role, pin) {
+      var store = {};
+      try { store = JSON.parse(sessionStorage.getItem(ROLE_CREDS_KEY) || '{}'); } catch (e) {}
+      store[role] = pin;
+      sessionStorage.setItem(ROLE_CREDS_KEY, JSON.stringify(store));
+    }
+
+    // ---------- view router (all three admin views are PIN-gated) ----------
+    var GATED_ROLES = { processor: 'processor', approver: 'approver', hr: 'hr' };
+    var viewLoaders = {};
+
+    function activateView(view) {
+      document.querySelectorAll('.ledger-tab').forEach(function (t) { t.classList.toggle('active', t.dataset.view === view); });
+      document.querySelectorAll('.view-panel').forEach(function (p) { p.classList.toggle('active', p.id === 'view-' + view); });
+    }
+
+    function goToView(view) {
+      var role = GATED_ROLES[view];
+      var pin = getStoredPin(role);
+      if (pin) {
+        activateView(view);
+        if (viewLoaders[view]) viewLoaders[view](pin);
+      } else {
+        openPinModal(role, view);
+      }
+    }
+
+    var pendingUnlock = null;
+
+    function openPinModal(role, view) {
+      pendingUnlock = { role: role, view: view };
+      document.getElementById('pinModalRole').textContent = role.toUpperCase();
+      document.getElementById('pinInput').value = '';
+      document.getElementById('pinModalError').classList.remove('show');
+      document.getElementById('pinBackdrop').classList.add('show');
+      document.getElementById('pinInput').focus();
+    }
+
+    function closePinModal() {
+      document.getElementById('pinBackdrop').classList.remove('show');
+      pendingUnlock = null;
+    }
+
+    function submitPin() {
+      if (!pendingUnlock) return;
+      var pin = document.getElementById('pinInput').value.trim();
+      var role = pendingUnlock.role, view = pendingUnlock.view;
+      var btn = document.getElementById('pinSubmitBtn');
+      btn.disabled = true;
+      gs('checkPin', role, pin).then(function (ok) {
+        btn.disabled = false;
+        if (ok) {
+          storePin(role, pin);
+          closePinModal();
+          activateView(view);
+          if (viewLoaders[view]) viewLoaders[view](pin);
+        } else {
+          document.getElementById('pinModalError').classList.add('show');
+        }
+      }).catch(function () {
+        btn.disabled = false;
+        document.getElementById('pinModalError').classList.add('show');
+      });
+    }
+
+    // ================= Processor Queue =================
+    viewLoaders.processor = function (pin) { loadProcessorQueue(pin); };
+
+    function loadProcessorQueue(pin) {
+      var container = document.getElementById('proc-results');
+      container.innerHTML = '<p class="empty-state">Loading…</p>';
+      gs('getPendingForProcessor', pin).then(function (rows) {
+        renderProcessorQueue(rows, pin);
+      }).catch(function (err) {
+        container.innerHTML = '<p class="empty-state">Error loading queue.</p>';
+        toast(err && err.message ? err.message : String(err), 'error');
+      });
+    }
+
+    function renderProcessorQueue(rows, pin) {
+      var container = document.getElementById('proc-results');
+      if (!rows.length) {
+        container.innerHTML = '<p class="empty-state">No pending requests.</p>';
+        return;
+      }
+      var html = '<table class="ledger-table"><thead><tr>' +
+        '<th>Name</th><th>Branch</th><th>Amount</th><th>Cutoff</th><th>Working Days</th><th>Purpose</th><th>Actions</th>' +
+        '</tr></thead><tbody>';
+      rows.forEach(function (r) {
+        html += '<tr>' +
+          '<td>' + r.name + '</td>' +
+          '<td>' + r.branch + '</td>' +
+          '<td class="num">' + formatCurrency(r.amount) + '</td>' +
+          '<td>' + r.cutoffPeriod + '</td>' +
+          '<td class="num">' + r.daysPresent + '</td>' +
+          '<td>' + r.purpose + '</td>' +
+          '<td>' +
+            '<div class="row-actions">' +
+              '<button class="btn btn-approve" data-action="forward" data-id="' + r.requestId + '">Forward</button>' +
+              '<button class="btn btn-reject btn-outline" data-action="reject" data-id="' + r.requestId + '">Reject</button>' +
+            '</div>' +
+            '<div class="review-inline" id="proc-inline-' + r.requestId + '">' +
+              '<textarea placeholder="Remarks" id="proc-remarks-' + r.requestId + '"></textarea>' +
+              '<div class="row-actions">' +
+                '<button class="btn" data-confirm="forward" data-id="' + r.requestId + '">Confirm Forward</button>' +
+                '<button class="btn btn-reject" data-confirm="reject" data-id="' + r.requestId + '">Confirm Reject</button>' +
+                '<button class="btn btn-outline" data-confirm="cancel" data-id="' + r.requestId + '">Cancel</button>' +
+              '</div>' +
+            '</div>' +
+          '</td>' +
+          '</tr>';
+      });
+      html += '</tbody></table>';
+      container.innerHTML = html;
+
+      container.querySelectorAll('[data-action]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          document.getElementById('proc-inline-' + btn.dataset.id).classList.add('show');
+        });
+      });
+
+      container.querySelectorAll('[data-confirm]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          var id = btn.dataset.id;
+          var action = btn.dataset.confirm;
+          if (action === 'cancel') {
+            document.getElementById('proc-inline-' + id).classList.remove('show');
+            return;
+          }
+          var remarks = document.getElementById('proc-remarks-' + id).value.trim();
+          if (action === 'reject' && !remarks) { toast('Remarks are required to reject.', 'error'); return; }
+          btn.disabled = true;
+          gs('processorReview', id, action, remarks, pin).then(function () {
+            toast(action === 'forward' ? 'Forwarded to Approver.' : 'Request rejected.', 'success');
+            loadProcessorQueue(pin);
+          }).catch(function (err) {
+            btn.disabled = false;
+            toast(err && err.message ? err.message : String(err), 'error');
+          });
+        });
+      });
+    }
+
+    // ================= Approver Queue =================
+    viewLoaders.approver = function (pin) { loadApproverQueue(pin); };
+
+    function loadApproverQueue(pin) {
+      var container = document.getElementById('appr-results');
+      container.innerHTML = '<p class="empty-state">Loading…</p>';
+      gs('getPendingForApprover', pin).then(function (rows) {
+        renderApproverQueue(rows, pin);
+      }).catch(function (err) {
+        container.innerHTML = '<p class="empty-state">Error loading queue.</p>';
+        toast(err && err.message ? err.message : String(err), 'error');
+      });
+    }
+
+    function renderApproverQueue(rows, pin) {
+      var container = document.getElementById('appr-results');
+      if (!rows.length) {
+        container.innerHTML = '<p class="empty-state">No requests awaiting approval.</p>';
+        return;
+      }
+      var html = '<table class="ledger-table"><thead><tr>' +
+        '<th>Name</th><th>Branch</th><th>Amount</th><th>Cutoff</th><th>Working Days</th><th>Processor Remarks</th><th>Actions</th>' +
+        '</tr></thead><tbody>';
+      rows.forEach(function (r) {
+        html += '<tr>' +
+          '<td>' + r.name + '</td>' +
+          '<td>' + r.branch + '</td>' +
+          '<td class="num">' + formatCurrency(r.amount) + '</td>' +
+          '<td>' + r.cutoffPeriod + '</td>' +
+          '<td class="num">' + r.daysPresent + '</td>' +
+          '<td>' + (r.processorRemarks || '—') + '</td>' +
+          '<td>' +
+            '<div class="row-actions">' +
+              '<button class="btn btn-approve btn-outline" data-open="' + r.requestId + '">Review</button>' +
+            '</div>' +
+            '<div class="review-inline" id="appr-inline-' + r.requestId + '">' +
+              '<label class="atd-toggle"><input type="checkbox" id="appr-atd-' + r.requestId + '"> ATD Compliant (per auditor)</label>' +
+              '<textarea placeholder="Remarks" id="appr-remarks-' + r.requestId + '"></textarea>' +
+              '<div class="row-actions">' +
+                '<button class="btn btn-approve" data-confirm="approve" data-id="' + r.requestId + '">Approve</button>' +
+                '<button class="btn btn-reject" data-confirm="reject" data-id="' + r.requestId + '">Reject</button>' +
+                '<button class="btn btn-outline" data-confirm="cancel" data-id="' + r.requestId + '">Cancel</button>' +
+              '</div>' +
+            '</div>' +
+          '</td>' +
+          '</tr>';
+      });
+      html += '</tbody></table>';
+      container.innerHTML = html;
+
+      container.querySelectorAll('[data-open]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          document.getElementById('appr-inline-' + btn.dataset.open).classList.add('show');
+        });
+      });
+
+      container.querySelectorAll('[data-confirm]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          var id = btn.dataset.id;
+          var action = btn.dataset.confirm;
+          if (action === 'cancel') {
+            document.getElementById('appr-inline-' + id).classList.remove('show');
+            return;
+          }
+          var remarks = document.getElementById('appr-remarks-' + id).value.trim();
+          var atd = document.getElementById('appr-atd-' + id).checked;
+          if (action === 'reject' && !remarks) { toast('Remarks are required to reject.', 'error'); return; }
+          btn.disabled = true;
+          gs('approverReview', id, action, atd, remarks, pin).then(function () {
+            toast(action === 'approve' ? 'Request approved and forwarded to HR.' : 'Request rejected.', 'success');
+            loadApproverQueue(pin);
+          }).catch(function (err) {
+            btn.disabled = false;
+            toast(err && err.message ? err.message : String(err), 'error');
+          });
+        });
+      });
+    }
+
+    // ================= HR Summary =================
+    var hrRowsCache = [];
+
+    viewLoaders.hr = function (pin) { loadHrSummary(pin); loadCaWindowStatus(pin); };
+
+    function loadCaWindowStatus(pin) {
+      var statusEl = document.getElementById('ca-window-status');
+      gs('getCaWindowStatus').then(function (status) {
+        renderCaWindowStatus(status);
+      }).catch(function (err) {
+        statusEl.textContent = 'Error loading window status.';
+        toast(err && err.message ? err.message : String(err), 'error');
+      });
+    }
+
+    function renderCaWindowStatus(status) {
+      var statusEl = document.getElementById('ca-window-status');
+      var dotClass = status.open ? 'open' : 'closed';
+      var label = status.open ? 'OPEN' : 'CLOSED';
+      var overrideLabel = { AUTO: 'Auto (Mon–Wed)', FORCE_OPEN: 'Force Open', FORCE_CLOSED: 'Force Closed' }[status.override] || status.override;
+      statusEl.innerHTML = '<span class="dot ' + dotClass + '"></span>CA Requests: <strong>' + label + '</strong> &middot; ' + overrideLabel;
+      document.querySelectorAll('#ca-window-panel [data-override]').forEach(function (btn) {
+        btn.classList.toggle('active', btn.dataset.override === status.override);
+      });
+    }
+
+    document.querySelectorAll('#ca-window-panel [data-override]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var pin = getStoredPin('hr');
+        if (!pin) return;
+        btn.disabled = true;
+        gs('setCaWindowOverride', btn.dataset.override, pin).then(function (status) {
+          btn.disabled = false;
+          renderCaWindowStatus(status);
+          toast('CA window updated.', 'success');
+        }).catch(function (err) {
+          btn.disabled = false;
+          toast(err && err.message ? err.message : String(err), 'error');
+        });
+      });
+    });
+
+    function loadHrSummary(pin) {
+      var container = document.getElementById('hr-results');
+      container.innerHTML = '<p class="empty-state">Loading…</p>';
+      gs('generateHrSummary', pin).then(function (rows) {
+        hrRowsCache = rows;
+        renderHrSummary(rows);
+      }).catch(function (err) {
+        container.innerHTML = '<p class="empty-state">Error loading summary.</p>';
+        toast(err && err.message ? err.message : String(err), 'error');
+      });
+    }
+
+    function renderHrSummary(rows) {
+      var container = document.getElementById('hr-results');
+      if (!rows.length) {
+        container.innerHTML = '<p class="empty-state">No approved requests yet.</p>';
+        return;
+      }
+      var total = rows.reduce(function (sum, r) { return sum + Number(r.amount || 0); }, 0);
+      var html = '<table class="ledger-table"><thead><tr>' +
+        '<th>Request ID</th><th>Name</th><th>Branch</th><th>Amount</th><th>Cutoff</th><th>ATD</th><th>Date Approved</th>' +
+        '</tr></thead><tbody>';
+      rows.forEach(function (r) {
+        html += '<tr>' +
+          '<td class="req-id">' + r.requestId + '</td>' +
+          '<td>' + r.name + '</td>' +
+          '<td>' + r.branch + '</td>' +
+          '<td class="num">' + formatCurrency(r.amount) + '</td>' +
+          '<td>' + r.cutoffPeriod + '</td>' +
+          '<td>' + r.atdCompliance + '</td>' +
+          '<td>' + formatDate(r.dateApproved) + '</td>' +
+          '</tr>';
+      });
+      html += '</tbody></table>';
+      html += '<p class="summary-total">Total to disburse: <strong>' + formatCurrency(total) + '</strong> across ' + rows.length + ' request(s)</p>';
+      container.innerHTML = html;
+    }
+
+    function toCsvValue(value) {
+      var s = String(value === undefined || value === null ? '' : value);
+      if (/[",\n]/.test(s)) s = '"' + s.replace(/"/g, '""') + '"';
+      return s;
+    }
+
+    document.getElementById('hr-export').addEventListener('click', function () {
+      if (!hrRowsCache.length) { toast('Nothing to export.', 'error'); return; }
+      var headers = ['Request ID', 'Name', 'Branch', 'Amount', 'Cutoff Period', 'Working Days', 'ATD Compliance', 'Date Approved', 'Purpose'];
+      var lines = [headers.join(',')];
+      hrRowsCache.forEach(function (r) {
+        lines.push([r.requestId, r.name, r.branch, r.amount, r.cutoffPeriod, r.daysPresent, r.atdCompliance, formatDate(r.dateApproved), r.purpose].map(toCsvValue).join(','));
+      });
+      var blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = 'ca-disbursement-summary-' + new Date().toISOString().slice(0, 10) + '.csv';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    });
+
+    document.getElementById('hr-refresh').addEventListener('click', function () {
+      var pin = getStoredPin('hr');
+      if (pin) loadHrSummary(pin);
+    });
+
+    document.addEventListener('DOMContentLoaded', function () {
+      document.querySelectorAll('.ledger-tab').forEach(function (tab) {
+        tab.addEventListener('click', function () { goToView(tab.dataset.view); });
+      });
+      document.getElementById('pinCancelBtn').addEventListener('click', closePinModal);
+      document.getElementById('pinSubmitBtn').addEventListener('click', submitPin);
+      document.getElementById('pinInput').addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') submitPin();
+      });
+      goToView('processor');
+    });
+  </script>
+</body>
+</html>
