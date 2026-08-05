@@ -48,6 +48,18 @@ and iterating on real feedback.
     staff. Approver's batch-approve uses one shared ATD-compliant checkbox + one shared remarks box
     applied to every selected request; batch-reject (either queue) uses one shared remarks box.
     Single-row actions are untouched.
+12. Added a "Filter by branch" dropdown alongside the name filter in both the Processor and
+    Approver queues — combines with the name filter (both must match). Options are built from
+    whichever branches actually appear in the currently-loaded queue (not the full Masterlist), so
+    the dropdown never offers a branch with zero pending requests.
+13. Gave the Processor the ability to correct a request's CA amount as part of the existing
+    single-row Forward action (not batch, not Reject) — a dropdown constrained to the same
+    `CA_AMOUNTS` enum, pre-selected to the current amount. `processorReview` gained a `newAmount`
+    parameter, re-validated server-side, and auto-prepends an audit note to `PROCESSOR_REMARKS`
+    when the amount actually changes ("Amount corrected from ₱X to ₱Y."). Built via the full
+    brainstorming → spec → plan → subagent-driven-implementation workflow — see
+    `docs/superpowers/specs/2026-08-05-processor-amount-edit-design.md` and
+    `docs/superpowers/plans/2026-08-05-processor-amount-edit.md` for the full design record.
 
 ## Open items / not yet done
 - **Login brute-force protection**: flagged to the owner, not yet implemented. `findUser_`/`login`
@@ -63,11 +75,14 @@ and iterating on real feedback.
 - No automated tests exist (Apps Script has no local test runner in this setup) — verification has
   been entirely manual, walking the chat flow end-to-end after each change. See the Verification
   section pattern in past plans for what to click through.
-- **Pending deploy**: as of this session, both the logout-button-in-header change (`Admin.html`,
-  commit `ce2ef00`) and the name-filter/batch-approve change (`Admin.html` + `Code.gs`, commit
-  `3933c16`) are committed/pushed to GitHub but had not yet been pasted into the Apps Script
-  editor + redeployed as a new version — confirm this has happened before assuming either is live
-  for staff.
+- **Pending deploy**: as of this session, everything through commit `b6915e5` (logout button,
+  name/branch filters, batch approve/reject, and the Processor amount-edit feature — all in
+  `Admin.html` and/or `Code.gs`) is committed/pushed to GitHub but had not yet been pasted into the
+  Apps Script editor + redeployed as a new version. `Code.gs` and `Admin.html` must be deployed
+  **together** for the amount-edit feature specifically — they now depend on each other's updated
+  `processorReview` signature (5 args → 6 args), so deploying only one half would break the
+  Processor's Forward action entirely. Confirm deployment before assuming any of this is live for
+  staff.
 
 ## Deploy checklist after pulling changes from this repo
 1. Open the bound Sheet → Extensions → Apps Script.

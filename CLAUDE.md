@@ -57,7 +57,12 @@ the bottom of `Employee.html` and `Admin.html`.
 ## Business rules encoded in Code.gs (not just UI validation — every rule is re-checked
 server-side inside `createRequest`/`validateNewRequest_`, since `Employee.html` is unauthenticated
 and its client-side checks are just UX, not security)
-- **CA amount**: fixed enum, `CA_AMOUNTS = [500, 1000, 1500, 2000]`. No free-text amounts.
+- **CA amount**: fixed enum, `CA_AMOUNTS = [500, 1000, 1500, 2000]`. No free-text amounts anywhere,
+  including corrections — the Processor can adjust an employee's requested amount when forwarding
+  a Pending request (`processorReview`'s `newAmount` param), but it's re-validated against
+  `CA_AMOUNTS` server-side just like at creation, and only applied on `action === 'forward'` (never
+  on reject, never in batch). If the amount actually changes, an audit note ("Amount corrected from
+  ₱X to ₱Y.") is auto-prepended to `PROCESSOR_REMARKS` so the Approver/HR can see the correction.
 - **CA window**: normally open Monday–Wednesday only (`isCaWindowOpen_`, Asia/Manila). HR can
   force it open or closed from `Admin.html`'s HR view regardless of day, for emergencies.
 - **Cutoff period**: auto-computed from today's day-of-month, never asked — 11th–25th ⇒ `11-25`,
