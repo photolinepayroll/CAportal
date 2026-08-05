@@ -81,6 +81,13 @@
     border: 1px solid var(--paper-line); border-radius: 2px; padding: 10px 12px;
   }
   .field-group input:focus { outline: none; border-color: var(--ink); box-shadow: 0 0 0 3px rgba(31,45,61,0.08); }
+  .field-group select {
+    width: 100%; font-family: var(--font-body); font-size: 15px; color: var(--ink); background: #fffdf8;
+    border: 1px solid var(--paper-line); border-radius: 2px; padding: 10px 12px;
+  }
+  .field-group select:focus { outline: none; border-color: var(--ink); box-shadow: 0 0 0 3px rgba(31,45,61,0.08); }
+  .filter-row { display: flex; gap: 16px; flex-wrap: wrap; }
+  .filter-row .field-group { flex: 1 1 200px; }
 
   .ledger-card {
     background: var(--paper-card); border: 1px solid var(--paper-line); border-radius: 2px;
@@ -329,6 +336,28 @@
       return d.toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: 'numeric' });
     }
 
+    /** Distinct branch names present in a queue's rows, sorted A-Z. Used to populate a "Filter by branch" dropdown. */
+    function getUniqueBranches_(rows) {
+      var seen = {};
+      var branches = [];
+      rows.forEach(function (r) {
+        var b = String(r.branch || '').trim();
+        if (!b || seen[b.toLowerCase()]) return;
+        seen[b.toLowerCase()] = true;
+        branches.push(b);
+      });
+      branches.sort(function (a, b) { return a.localeCompare(b); });
+      return branches;
+    }
+
+    function buildBranchFilterOptions_(rows) {
+      var opts = '<option value="">All Branches</option>';
+      getUniqueBranches_(rows).forEach(function (b) {
+        opts += '<option value="' + b + '">' + b + '</option>';
+      });
+      return opts;
+    }
+
     // ---------- session (real login, one account = one role; "admin" role can access everything) ----------
     var SESSION_KEY = 'ca_portal_session';
 
@@ -438,9 +467,15 @@
         return;
       }
       container.innerHTML =
-        '<div class="field-group">' +
-          '<label for="proc-filter">Filter by name</label>' +
-          '<input type="text" id="proc-filter" placeholder="Type a name…">' +
+        '<div class="filter-row">' +
+          '<div class="field-group">' +
+            '<label for="proc-filter">Filter by name</label>' +
+            '<input type="text" id="proc-filter" placeholder="Type a name…">' +
+          '</div>' +
+          '<div class="field-group">' +
+            '<label for="proc-branch-filter">Filter by branch</label>' +
+            '<select id="proc-branch-filter">' + buildBranchFilterOptions_(rows) + '</select>' +
+          '</div>' +
         '</div>' +
         '<div class="btn-row tight" id="proc-bulk-toolbar" style="display:none;">' +
           '<span id="proc-bulk-count"></span>' +
@@ -459,14 +494,20 @@
       document.getElementById('proc-filter').addEventListener('input', function () {
         applyProcessorFilter(session);
       });
+      document.getElementById('proc-branch-filter').addEventListener('change', function () {
+        applyProcessorFilter(session);
+      });
       wireProcessorBulkToolbar(session);
       renderProcessorTable(rows, session);
     }
 
     function applyProcessorFilter(session) {
       var q = document.getElementById('proc-filter').value.trim().toLowerCase();
-      var filtered = !q ? procRowsCache : procRowsCache.filter(function (r) {
-        return String(r.name || '').toLowerCase().indexOf(q) !== -1;
+      var branch = document.getElementById('proc-branch-filter').value;
+      var filtered = procRowsCache.filter(function (r) {
+        var nameMatch = !q || String(r.name || '').toLowerCase().indexOf(q) !== -1;
+        var branchMatch = !branch || r.branch === branch;
+        return nameMatch && branchMatch;
       });
       renderProcessorTable(filtered, session);
     }
@@ -623,9 +664,15 @@
         return;
       }
       container.innerHTML =
-        '<div class="field-group">' +
-          '<label for="appr-filter">Filter by name</label>' +
-          '<input type="text" id="appr-filter" placeholder="Type a name…">' +
+        '<div class="filter-row">' +
+          '<div class="field-group">' +
+            '<label for="appr-filter">Filter by name</label>' +
+            '<input type="text" id="appr-filter" placeholder="Type a name…">' +
+          '</div>' +
+          '<div class="field-group">' +
+            '<label for="appr-branch-filter">Filter by branch</label>' +
+            '<select id="appr-branch-filter">' + buildBranchFilterOptions_(rows) + '</select>' +
+          '</div>' +
         '</div>' +
         '<div class="btn-row tight" id="appr-bulk-toolbar" style="display:none;">' +
           '<span id="appr-bulk-count"></span>' +
@@ -652,14 +699,20 @@
       document.getElementById('appr-filter').addEventListener('input', function () {
         applyApproverFilter(session);
       });
+      document.getElementById('appr-branch-filter').addEventListener('change', function () {
+        applyApproverFilter(session);
+      });
       wireApproverBulkToolbar(session);
       renderApproverTable(rows, session);
     }
 
     function applyApproverFilter(session) {
       var q = document.getElementById('appr-filter').value.trim().toLowerCase();
-      var filtered = !q ? apprRowsCache : apprRowsCache.filter(function (r) {
-        return String(r.name || '').toLowerCase().indexOf(q) !== -1;
+      var branch = document.getElementById('appr-branch-filter').value;
+      var filtered = apprRowsCache.filter(function (r) {
+        var nameMatch = !q || String(r.name || '').toLowerCase().indexOf(q) !== -1;
+        var branchMatch = !branch || r.branch === branch;
+        return nameMatch && branchMatch;
       });
       renderApproverTable(filtered, session);
     }
