@@ -177,6 +177,37 @@
   }
   .staff-link { color: var(--slate); text-decoration: none; border-bottom: 1px dotted var(--slate); }
   .staff-link:hover { color: var(--ink); border-color: var(--ink); }
+
+  #pdf-print-area { display: none; }
+
+  .print-header { margin-bottom: 16px; }
+  .print-title { font-family: var(--font-display); font-size: 20px; font-weight: 700; margin: 0 0 4px; }
+  .print-meta { font-family: var(--font-mono); font-size: 11px; color: var(--slate); text-transform: uppercase; letter-spacing: 0.06em; margin: 0; }
+
+  .print-table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 12px; }
+  .print-table th { text-align: left; padding: 6px 8px; border-bottom: 2px solid var(--ink); font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; }
+  .print-table td { padding: 8px; border-bottom: 1px solid var(--paper-line); }
+  .print-table .num { font-family: var(--font-mono); }
+
+  .print-total { margin-top: 14px; font-family: var(--font-mono); font-size: 13px; }
+
+  .print-signatories { display: flex; justify-content: space-between; gap: 24px; margin-top: 64px; page-break-inside: avoid; }
+  .signatory { flex: 1 1 0; text-align: center; }
+  .signatory-line { min-height: 40px; border-top: 1px solid var(--ink); padding-top: 6px; font-family: var(--font-body); font-size: 13px; }
+  .signatory-label { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; margin: 2px 0 0; }
+  .signatory-sub { font-family: var(--font-mono); font-size: 10px; color: var(--slate); margin: 2px 0 0; }
+
+  @media print {
+    body * { visibility: hidden; }
+    #pdf-print-area, #pdf-print-area * { visibility: visible; }
+    #pdf-print-area {
+      display: block; position: absolute; left: 0; top: 0; width: 100%;
+      color: #000; background: #fff;
+    }
+    @page { margin: 16mm; }
+    .print-table th { border-bottom-color: #000; }
+    .signatory-line { border-top-color: #000; }
+  }
   </style>
 </head>
 <body>
@@ -251,6 +282,7 @@
           <div class="btn-row tight">
             <button class="btn btn-outline" id="hr-refresh" type="button">Refresh</button>
             <button class="btn" id="hr-export" type="button">Export CSV</button>
+            <button class="btn btn-outline" id="hr-export-pdf" type="button">Export PDF</button>
           </div>
 
           <div id="hr-results"></div>
@@ -265,6 +297,8 @@
   </div>
 
   <div id="toast"></div>
+
+  <div id="pdf-print-area"></div>
 
   <script>
     document.getElementById('todayLabel').textContent = new Date().toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' });
@@ -972,6 +1006,53 @@
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
+    });
+
+    function buildSignatoryBlock_(label, prefilledName) {
+      return '<div class="signatory">' +
+        '<div class="signatory-line">' + (prefilledName || '&nbsp;') + '</div>' +
+        '<p class="signatory-label">' + label + '</p>' +
+        '<p class="signatory-sub">Printed Name &amp; Date</p>' +
+        '</div>';
+    }
+
+    function buildHrPrintHtml_(rows, preparedByName) {
+      var total = rows.reduce(function (sum, r) { return sum + Number(r.amount || 0); }, 0);
+      var html = '<div class="print-header">' +
+        '<p class="print-title">Photoline — CA Disbursement Summary</p>' +
+        '<p class="print-meta">Generated ' + formatDate(new Date()) + ' &middot; ' + rows.length + ' approved request(s)</p>' +
+        '</div>';
+
+      html += '<table class="print-table"><thead><tr>' +
+        '<th>Request ID</th><th>Name</th><th>Branch</th><th>Amount</th><th>Cutoff</th><th>ATD</th><th>Date Approved</th>' +
+        '</tr></thead><tbody>';
+      rows.forEach(function (r) {
+        html += '<tr>' +
+          '<td>' + r.requestId + '</td>' +
+          '<td>' + r.name + '</td>' +
+          '<td>' + r.branch + '</td>' +
+          '<td class="num">' + formatCurrency(r.amount) + '</td>' +
+          '<td>' + r.cutoffPeriod + '</td>' +
+          '<td>' + r.atdCompliance + '</td>' +
+          '<td>' + formatDate(r.dateApproved) + '</td>' +
+          '</tr>';
+      });
+      html += '</tbody></table>';
+      html += '<p class="print-total">Total to disburse: <strong>' + formatCurrency(total) + '</strong> across ' + rows.length + ' request(s)</p>';
+
+      html += '<div class="print-signatories">' +
+        buildSignatoryBlock_('Prepared by', preparedByName) +
+        buildSignatoryBlock_('Reviewed by', '') +
+        buildSignatoryBlock_('Approved by', '') +
+        '</div>';
+      return html;
+    }
+
+    document.getElementById('hr-export-pdf').addEventListener('click', function () {
+      if (!hrRowsCache.length) { toast('Nothing to export.', 'error'); return; }
+      var session = getSession();
+      document.getElementById('pdf-print-area').innerHTML = buildHrPrintHtml_(hrRowsCache, session ? session.name : '');
+      window.print();
     });
 
     document.getElementById('hr-refresh').addEventListener('click', function () {
