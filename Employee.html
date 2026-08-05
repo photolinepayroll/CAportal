@@ -362,7 +362,7 @@
       function renderOptions(options) {
         if (!ready) return;
         if (!options.length) {
-          list.innerHTML = '<div class="search-select-empty">Walang nahanap na branch.</div>';
+          list.innerHTML = '<div class="search-select-empty">No matching branch found.</div>';
           return;
         }
         list.innerHTML = '';
@@ -385,7 +385,7 @@
         allBranches = branches;
         renderOptions(filterOptions(''));
       }).catch(function () {
-        list.innerHTML = '<div class="search-select-empty">Hindi ma-load ang listahan ng branches. Subukan ulit.</div>';
+        list.innerHTML = '<div class="search-select-empty">Could not load the branch list. Please try again.</div>';
       });
 
       input.addEventListener('input', function () { renderOptions(filterOptions(input.value)); });
@@ -414,7 +414,7 @@
     }
 
     function offerMenuButton() {
-      renderQuickReplies([{ label: '🏠 Bumalik sa Menu', value: 'menu' }], function (opt) {
+      renderQuickReplies([{ label: '🏠 Back to Menu', value: 'menu' }], function (opt) {
         addUserBubble(opt.label);
         clearInputArea();
         startGreeting();
@@ -427,10 +427,10 @@
     function startGreeting() {
       chatState = { step: 'greeting', answers: {}, stepIndex: 0 };
       clearInputArea();
-      botSay('Kumusta! 👋 Ako ang Photoline CA Assistant. Ano ang gusto mong gawin?', 400).then(function () {
+      botSay('Hi! 👋 I\'m the Photoline CA Assistant. What would you like to do?', 400).then(function () {
         renderQuickReplies([
-          { label: '🆕 Mag-request ng Cash Advance', value: 'new' },
-          { label: '🔍 I-check ang status ng request ko', value: 'status' }
+          { label: '🆕 Request a Cash Advance', value: 'new' },
+          { label: '🔍 Check my request status', value: 'status' }
         ], function (opt) {
           addUserBubble(opt.label);
           clearInputArea();
@@ -443,21 +443,21 @@
     // ================= Branch A: New Request =================
     // Phase 1: verify the requester is a real employee BEFORE asking any CA details at all.
     var IDENTITY_STEPS = [
-      { key: 'lastName', prompt: 'Sige! Simulan natin. Ano ang apelyido (last name) mo?', type: 'text', placeholder: 'hal. Dela Cruz' },
-      { key: 'firstName', prompt: 'Ano naman ang first name mo?', type: 'text', placeholder: 'hal. Juan' },
-      { key: 'middleName', prompt: 'Ano ang gitnang pangalan (middle name) mo? Kung wala, i-tap na lang ang "Wala".', type: 'text-skip', placeholder: 'Middle Name', skipLabel: 'Wala akong Middle Name', skipValue: 'None' },
-      { key: 'birthday', prompt: 'Para sa verification, ano ang petsa ng kaarawan mo?', type: 'date', placeholder: '' }
+      { key: 'lastName', prompt: 'Alright! Let\'s get started. What\'s your last name?', type: 'text', placeholder: 'e.g. Dela Cruz' },
+      { key: 'firstName', prompt: 'And what\'s your first name?', type: 'text', placeholder: 'e.g. Juan' },
+      { key: 'middleName', prompt: 'What\'s your middle name? If you don\'t have one, just tap "None".', type: 'text-skip', placeholder: 'Middle Name', skipLabel: 'I don\'t have a Middle Name', skipValue: 'None' },
+      { key: 'birthday', prompt: 'For verification, what\'s your date of birth?', type: 'date', placeholder: '' }
     ];
 
     // Phase 2: the actual CA request fields, only reached after identity is verified. Branch lives here,
     // not in identity — it's just per-request context (same area can have multiple malls/branches).
     var CA_DETAIL_STEPS = [
-      { key: 'branch', prompt: 'Verified ka na! Anong branch mo?', type: 'search-select', placeholder: 'I-type para maghanap ng branch...' },
-      { key: 'amount', prompt: 'Magkano ang gusto mong i-advance?', type: 'quick', options: [
+      { key: 'branch', prompt: 'You\'re verified! What\'s your branch?', type: 'search-select', placeholder: 'Type to search for a branch...' },
+      { key: 'amount', prompt: 'How much would you like to advance?', type: 'quick', options: [
         { label: '₱500', value: 500 }, { label: '₱1,000', value: 1000 }, { label: '₱1,500', value: 1500 }, { label: '₱2,000', value: 2000 }
       ] },
-      { key: 'daysPresent', prompt: 'Ilang Working Days ang naitala mo ngayong cutoff?', type: 'number', placeholder: 'hal. 12' },
-      { key: 'purpose', prompt: 'Ano ang dahilan/purpose ng CA request mo?', type: 'text', placeholder: 'Dahilan' }
+      { key: 'daysPresent', prompt: 'How many Working Days have you logged this cutoff?', type: 'number', placeholder: 'e.g. 12' },
+      { key: 'purpose', prompt: 'What\'s the reason/purpose for your CA request?', type: 'text', placeholder: 'Reason' }
     ];
 
     // Mirrors computeCutoffPeriod_() in Code.gs — display-only preview before the server confirms it.
@@ -505,14 +505,14 @@
       gs('getCaWindowStatus').then(function (status) {
         hideTyping();
         if (!status.open) {
-          addBotBubble('Sarado muna ang pagtanggap ng CA requests ngayon. Bukas lang ito tuwing Lunes hanggang Miyerkules — subukan ka na lang ulit sa mga araw na iyon.');
+          addBotBubble('CA requests are closed right now. This is only open Monday through Wednesday — please try again on those days.');
           offerMenuButton();
           return;
         }
         runSteps(IDENTITY_STEPS, 0, verifyThenAskCaDetails);
       }).catch(function (err) {
         hideTyping();
-        addErrorBubble('May naganap na error: ' + (err && err.message ? err.message : err));
+        addErrorBubble('An error occurred: ' + (err && err.message ? err.message : err));
         offerMenuButton();
       });
     }
@@ -523,10 +523,10 @@
       gs('verifyIdentity', a.lastName, a.firstName, a.middleName, a.birthday).then(function (valid) {
         hideTyping();
         if (!valid) {
-          addErrorBubble('Hindi ka na-verify sa aming listahan ng empleyado. Siguraduhing tama ang last name, first name, middle name, at kaarawan. Kontakin ang HR kung tama na lahat ng detalye mo.');
+          addErrorBubble('We couldn\'t verify you against our employee list. Please make sure your last name, first name, middle name, and birthday are all correct. Contact HR if all your details are already correct.');
           renderQuickReplies([
-            { label: '🔁 Subukan Ulit', value: 'retry' },
-            { label: '🏠 Bumalik sa Menu', value: 'menu' }
+            { label: '🔁 Try Again', value: 'retry' },
+            { label: '🏠 Back to Menu', value: 'menu' }
           ], function (opt) {
             addUserBubble(opt.label);
             clearInputArea();
@@ -537,7 +537,7 @@
         runSteps(CA_DETAIL_STEPS, 0, showReviewCard);
       }).catch(function (err) {
         hideTyping();
-        addErrorBubble('May naganap na error: ' + (err && err.message ? err.message : err));
+        addErrorBubble('An error occurred: ' + (err && err.message ? err.message : err));
         offerMenuButton();
       });
     }
@@ -546,21 +546,21 @@
       clearInputArea();
       var a = chatState.answers;
       var html = '<div class="info-card">'
-        + '<div class="info-card-header">Review ang Request Mo</div>'
+        + '<div class="info-card-header">Review Your Request</div>'
         + '<div class="info-card-body">'
         + infoRow('Branch', a.branch)
-        + infoRow('Pangalan', a.lastName + ', ' + a.firstName)
-        + infoRow('Halaga', formatCurrency(a.amount))
+        + infoRow('Name', a.lastName + ', ' + a.firstName)
+        + infoRow('Amount', formatCurrency(a.amount))
         + infoRow('Crediting Date', formatDate(computeNextFridayPreview()))
         + infoRow('Cutoff', computeCutoffPeriodPreview())
         + infoRow('Working Days', a.daysPresent)
         + infoRow('Purpose', a.purpose)
         + '</div></div>';
-      botSay('Heto ang buod ng request mo — tama ba lahat?', 400).then(function () {
+      botSay('Here\'s a summary of your request — does everything look correct?', 400).then(function () {
         addCardHtml(html);
         renderQuickReplies([
           { label: '✅ Confirm', value: 'confirm' },
-          { label: '✏️ Ulitin', value: 'restart' }
+          { label: '✏️ Edit', value: 'restart' }
         ], function (opt) {
           addUserBubble(opt.label);
           clearInputArea();
@@ -575,19 +575,19 @@
       gs('createRequest', chatState.answers).then(function (result) {
         hideTyping();
         if (result.success) {
-          var html = '<div class="info-card"><div class="info-card-header success">✅ Naisumite na!</div><div class="info-card-body">'
+          var html = '<div class="info-card"><div class="info-card-header success">✅ Submitted!</div><div class="info-card-body">'
             + infoRow('Reference ID', result.requestId)
             + infoRow('Cutoff', result.cutoffPeriod)
             + infoRow('Crediting Date', formatDate(result.creditingDate))
-            + '<p class="info-card-note">Ipoproseso na ang request mo. Puwede mo itong i-check anumang oras dito sa chat.</p>'
+            + '<p class="info-card-note">Your request is now being processed. You can check on it anytime here in the chat.</p>'
             + '</div></div>';
           addCardHtml(html);
           offerMenuButton();
         } else {
           addErrorBubble(result.errors.join(' '));
           renderQuickReplies([
-            { label: '🔁 Subukan Ulit', value: 'retry' },
-            { label: '🏠 Bumalik sa Menu', value: 'menu' }
+            { label: '🔁 Try Again', value: 'retry' },
+            { label: '🏠 Back to Menu', value: 'menu' }
           ], function (opt) {
             addUserBubble(opt.label);
             clearInputArea();
@@ -596,15 +596,15 @@
         }
       }).catch(function (err) {
         hideTyping();
-        addErrorBubble('May naganap na error: ' + (err && err.message ? err.message : err));
+        addErrorBubble('An error occurred: ' + (err && err.message ? err.message : err));
         offerMenuButton();
       });
     }
 
     // ================= Branch B: Check Status =================
     var STATUS_CHECK_STEPS = [
-      { key: 'lastName', prompt: 'Para sa seguridad, i-verify muna kita. Anong last name mo?', type: 'text', placeholder: 'Last Name' },
-      { key: 'requestId', prompt: 'Ano ang Request Number mo? (nasa confirmation ito noong nag-submit ka, hal. SCA#000007)', type: 'text', placeholder: 'SCA#000007' }
+      { key: 'lastName', prompt: 'For security, let\'s verify you first. What\'s your last name?', type: 'text', placeholder: 'Last Name' },
+      { key: 'requestId', prompt: 'What\'s your Request Number? (this was on your confirmation when you submitted, e.g. SCA#000007)', type: 'text', placeholder: 'SCA#000007' }
     ];
 
     function startStatusCheckFlow() {
@@ -618,12 +618,12 @@
     function statusCardHtml(r) {
       var badgeClass = String(r.status || '').toLowerCase();
       var extraLine = '';
-      if (r.status === 'Rejected') extraLine = infoRow('Dahilan', r.approverRemarks || r.processorRemarks || '—');
-      if (r.status === 'Approved') extraLine = infoRow('Na-approve noong', formatDate(r.dateApproved));
+      if (r.status === 'Rejected') extraLine = infoRow('Reason', r.approverRemarks || r.processorRemarks || '—');
+      if (r.status === 'Approved') extraLine = infoRow('Approved on', formatDate(r.dateApproved));
       return '<div class="info-card"><div class="info-card-header">' + formatDate(r.timestamp) + '</div><div class="info-card-body">'
-        + infoRow('Pangalan', r.name)
+        + infoRow('Name', r.name)
         + infoRow('Request ID', r.requestId)
-        + infoRow('Halaga', formatCurrency(r.amount))
+        + infoRow('Amount', formatCurrency(r.amount))
         + infoRow('Cutoff', r.cutoffPeriod)
         + infoRow('Purpose', r.purpose)
         + '<div class="info-row"><span class="label">Status</span><span class="status-badge ' + badgeClass + '">' + r.status + '</span></div>'
@@ -636,10 +636,10 @@
       gs('getRequestByLastNameAndId', lastName, requestId).then(function (rows) {
         hideTyping();
         if (!rows.length) {
-          addBotBubble('Walang nakitang request na tumutugma sa Last Name at Request Number na ibinigay mo. Siguraduhing tama ang parehong detalye.');
+          addBotBubble('No request found matching the Last Name and Request Number you provided. Please make sure both details are correct.');
           renderQuickReplies([
-            { label: '🔁 Subukan Ulit', value: 'retry' },
-            { label: '🏠 Bumalik sa Menu', value: 'menu' }
+            { label: '🔁 Try Again', value: 'retry' },
+            { label: '🏠 Back to Menu', value: 'menu' }
           ], function (opt) {
             addUserBubble(opt.label);
             clearInputArea();
@@ -653,7 +653,7 @@
         });
       }).catch(function (err) {
         hideTyping();
-        addErrorBubble('May naganap na error: ' + (err && err.message ? err.message : err));
+        addErrorBubble('An error occurred: ' + (err && err.message ? err.message : err));
         offerMenuButton();
       });
     }
