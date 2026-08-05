@@ -25,6 +25,8 @@ function doPost(e) {
     generateHrSummary: generateHrSummary,
     processorReview: processorReview,
     approverReview: approverReview,
+    processorReviewBatch: processorReviewBatch,
+    approverReviewBatch: approverReviewBatch,
     getCaWindowStatus: getCaWindowStatus,
     setCaWindowOverride: setCaWindowOverride,
     verifyIdentity: verifyIdentity,
@@ -595,6 +597,96 @@ function approverReview(requestId, action, atdCompliance, remarks, username, pas
     });
   }
   return { success: true };
+}
+
+/**
+ * Batch version of processorReview. action: 'forward' | 'reject'. requestIds: array of SCA# strings.
+ * Remarks are shared across the whole batch (one textarea in the UI). Per-row failures (already
+ * actioned by someone else, unknown id) are collected instead of aborting the whole batch.
+ * Returns { succeeded: [{requestId}], failed: [{requestId, reason}] }.
+ */
+function processorReviewBatch(requestIds, action, remarks, username, password) {
+  requireAccess_(username, password, ROLES.PROCESSOR);
+  if (action === 'reject' && (!remarks || !String(remarks).trim())) {
+    throw new Error('Remarks are required when rejecting a request.');
+  }
+
+  var byId = {};
+  getAllRequests_().forEach(function (r) { byId[r.requestId] = r; });
+
+  var succeeded = [];
+  var failed = [];
+  var newStatus = action === 'forward' ? STATUS.PROCESSING : STATUS.REJECTED;
+
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    (requestIds || []).forEach(function (id) {
+      var req = byId[id];
+      if (!req) { failed.push({ requestId: id, reason: 'Request not found.' }); return; }
+      if (req.status !== STATUS.PENDING) {
+        failed.push({ requestId: id, reason: 'Request is not in Pending status.' });
+        return;
+      }
+      setRowFields_(req.rowIndex, { STATUS: newStatus, PROCESSOR_REMARKS: remarks || '' });
+      succeeded.push({ requestId: id });
+    });
+  } finally {
+    lock.releaseLock();
+  }
+
+  return { succeeded: succeeded, failed: failed };
+}
+
+/**
+ * Batch version of approverReview. action: 'approve' | 'reject'. requestIds: array of SCA# strings.
+ * atdCompliance and remarks are shared across the whole batch (one checkbox/textarea in the UI).
+ * Returns { succeeded: [{requestId}], failed: [{requestId, reason}] }.
+ */
+function approverReviewBatch(requestIds, action, atdCompliance, remarks, username, password) {
+  requireAccess_(username, password, ROLES.APPROVER);
+  if (action === 'reject' && (!remarks || !String(remarks).trim())) {
+    throw new Error('Remarks are required when rejecting a request.');
+  }
+
+  var byId = {};
+  getAllRequests_().forEach(function (r) { byId[r.requestId] = r; });
+
+  var succeeded = [];
+  var failed = [];
+
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    (requestIds || []).forEach(function (id) {
+      var req = byId[id];
+      if (!req) { failed.push({ requestId: id, reason: 'Request not found.' }); return; }
+      if (req.status !== STATUS.PROCESSING) {
+        failed.push({ requestId: id, reason: 'Request is not in Processing status.' });
+        return;
+      }
+      if (action === 'approve') {
+        setRowFields_(req.rowIndex, {
+          STATUS: STATUS.APPROVED,
+          ATD_COMPLIANCE: atdCompliance ? 'Yes' : 'No',
+          APPROVER_REMARKS: remarks || '',
+          DATE_APPROVED: new Date(),
+          FORWARDED_TO_HR: 'Yes'
+        });
+      } else {
+        setRowFields_(req.rowIndex, {
+          STATUS: STATUS.REJECTED,
+          ATD_COMPLIANCE: atdCompliance ? 'Yes' : 'No',
+          APPROVER_REMARKS: remarks || ''
+        });
+      }
+      succeeded.push({ requestId: id });
+    });
+  } finally {
+    lock.releaseLock();
+  }
+
+  return { succeeded: succeeded, failed: failed };
 }
 
 /** HR-facing: rows where Status = Approved, ready for disbursement. CSV export happens client-side from this data. */

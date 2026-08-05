@@ -300,6 +300,23 @@
       toastTimer = setTimeout(function () { el.className = ''; }, 3800);
     }
 
+    /** Shared toast summary for processorReviewBatch/approverReviewBatch results. verbPast: 'forwarded' | 'approved' | 'rejected'. */
+    function reportBatchResult(result, verbPast) {
+      var okCount = result.succeeded.length;
+      var failCount = result.failed.length;
+      if (failCount) console.warn('Batch failures:', result.failed);
+      if (failCount === 0) {
+        toast(okCount + (okCount === 1 ? ' request ' : ' requests ') + verbPast + '.', 'success');
+        return;
+      }
+      if (okCount === 0) {
+        toast('None of the ' + failCount + ' selected requests could be ' + verbPast + '. They may have already been processed by someone else.', 'error');
+        return;
+      }
+      toast(okCount + ' of ' + (okCount + failCount) + ' requests ' + verbPast + '; ' + failCount +
+        ' skipped (already changed by someone else — refresh to see current status).', 'error');
+    }
+
     function formatCurrency(amount) {
       var n = Number(amount) || 0;
       return '₱' + n.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -397,10 +414,15 @@
     // ================= Processor Queue =================
     viewLoaders.processor = function (session) { loadProcessorQueue(session); };
 
+    var procRowsCache = [];
+    var procSelectedIds = new Set();
+
     function loadProcessorQueue(session) {
       var container = document.getElementById('proc-results');
       container.innerHTML = '<p class="empty-state">Loading…</p>';
       gs('getPendingForProcessor', session.username, session.password).then(function (rows) {
+        procRowsCache = rows;
+        procSelectedIds.clear();
         renderProcessorQueue(rows, session);
       }).catch(function (err) {
         container.innerHTML = '<p class="empty-state">Error loading queue.</p>';
@@ -408,17 +430,63 @@
       });
     }
 
+    /** Filter/toolbar chrome, built once per load. Table body itself is rendered by renderProcessorTable. */
     function renderProcessorQueue(rows, session) {
       var container = document.getElementById('proc-results');
       if (!rows.length) {
         container.innerHTML = '<p class="empty-state">No pending requests.</p>';
         return;
       }
+      container.innerHTML =
+        '<div class="field-group">' +
+          '<label for="proc-filter">Filter by name</label>' +
+          '<input type="text" id="proc-filter" placeholder="Type a name…">' +
+        '</div>' +
+        '<div class="btn-row tight" id="proc-bulk-toolbar" style="display:none;">' +
+          '<span id="proc-bulk-count"></span>' +
+          '<button class="btn btn-approve" id="proc-bulk-forward">Forward Selected</button>' +
+          '<button class="btn btn-reject btn-outline" id="proc-bulk-reject-open">Reject Selected</button>' +
+        '</div>' +
+        '<div class="review-inline" id="proc-bulk-reject-panel">' +
+          '<textarea placeholder="Remarks (applied to all selected)" id="proc-bulk-remarks"></textarea>' +
+          '<div class="row-actions">' +
+            '<button class="btn btn-reject" id="proc-bulk-reject-confirm">Confirm Reject Selected</button>' +
+            '<button class="btn btn-outline" id="proc-bulk-reject-cancel">Cancel</button>' +
+          '</div>' +
+        '</div>' +
+        '<div id="proc-table-area"></div>';
+
+      document.getElementById('proc-filter').addEventListener('input', function () {
+        applyProcessorFilter(session);
+      });
+      wireProcessorBulkToolbar(session);
+      renderProcessorTable(rows, session);
+    }
+
+    function applyProcessorFilter(session) {
+      var q = document.getElementById('proc-filter').value.trim().toLowerCase();
+      var filtered = !q ? procRowsCache : procRowsCache.filter(function (r) {
+        return String(r.name || '').toLowerCase().indexOf(q) !== -1;
+      });
+      renderProcessorTable(filtered, session);
+    }
+
+    function renderProcessorTable(rows, session) {
+      var area = document.getElementById('proc-table-area');
+      if (!rows.length) {
+        area.innerHTML = '<p class="empty-state">No requests match that name.</p>';
+        updateProcessorBulkToolbar();
+        return;
+      }
+      var allChecked = rows.every(function (r) { return procSelectedIds.has(r.requestId); });
       var html = '<div class="table-scroll"><table class="ledger-table"><thead><tr>' +
+        '<th><input type="checkbox" id="proc-select-all"' + (allChecked ? ' checked' : '') + '></th>' +
         '<th>Name</th><th>Branch</th><th>Amount</th><th>Cutoff</th><th>Working Days</th><th>Purpose</th><th>Actions</th>' +
         '</tr></thead><tbody>';
       rows.forEach(function (r) {
+        var checked = procSelectedIds.has(r.requestId) ? ' checked' : '';
         html += '<tr>' +
+          '<td><input type="checkbox" class="proc-row-select" data-id="' + r.requestId + '"' + checked + '></td>' +
           '<td>' + r.name + '</td>' +
           '<td>' + r.branch + '</td>' +
           '<td class="num">' + formatCurrency(r.amount) + '</td>' +
@@ -442,15 +510,15 @@
           '</tr>';
       });
       html += '</tbody></table></div>';
-      container.innerHTML = html;
+      area.innerHTML = html;
 
-      container.querySelectorAll('[data-action]').forEach(function (btn) {
+      area.querySelectorAll('[data-action]').forEach(function (btn) {
         btn.addEventListener('click', function () {
           document.getElementById('proc-inline-' + btn.dataset.id).classList.add('show');
         });
       });
 
-      container.querySelectorAll('[data-confirm]').forEach(function (btn) {
+      area.querySelectorAll('[data-confirm]').forEach(function (btn) {
         btn.addEventListener('click', function () {
           var id = btn.dataset.id;
           var action = btn.dataset.confirm;
@@ -470,15 +538,76 @@
           });
         });
       });
+
+      document.getElementById('proc-select-all').addEventListener('change', function (e) {
+        rows.forEach(function (r) {
+          if (e.target.checked) procSelectedIds.add(r.requestId); else procSelectedIds.delete(r.requestId);
+        });
+        renderProcessorTable(rows, session);
+      });
+      area.querySelectorAll('.proc-row-select').forEach(function (cb) {
+        cb.addEventListener('change', function () {
+          if (cb.checked) procSelectedIds.add(cb.dataset.id); else procSelectedIds.delete(cb.dataset.id);
+          updateProcessorBulkToolbar();
+        });
+      });
+
+      updateProcessorBulkToolbar();
+    }
+
+    function updateProcessorBulkToolbar() {
+      var n = procSelectedIds.size;
+      var toolbar = document.getElementById('proc-bulk-toolbar');
+      if (!toolbar) return;
+      toolbar.style.display = n > 0 ? 'flex' : 'none';
+      document.getElementById('proc-bulk-count').textContent = n > 0 ? (n + ' selected') : '';
+      if (n === 0) document.getElementById('proc-bulk-reject-panel').classList.remove('show');
+    }
+
+    function wireProcessorBulkToolbar(session) {
+      document.getElementById('proc-bulk-forward').addEventListener('click', function () {
+        if (!procSelectedIds.size) return;
+        runProcessorBatch(session, 'forward', '');
+      });
+      document.getElementById('proc-bulk-reject-open').addEventListener('click', function () {
+        document.getElementById('proc-bulk-reject-panel').classList.add('show');
+      });
+      document.getElementById('proc-bulk-reject-cancel').addEventListener('click', function () {
+        document.getElementById('proc-bulk-reject-panel').classList.remove('show');
+      });
+      document.getElementById('proc-bulk-reject-confirm').addEventListener('click', function () {
+        var remarks = document.getElementById('proc-bulk-remarks').value.trim();
+        if (!remarks) { toast('Remarks are required to reject.', 'error'); return; }
+        runProcessorBatch(session, 'reject', remarks);
+      });
+    }
+
+    function runProcessorBatch(session, action, remarks) {
+      var ids = Array.from(procSelectedIds);
+      var btns = document.querySelectorAll('#proc-bulk-toolbar button, #proc-bulk-reject-confirm');
+      btns.forEach(function (b) { b.disabled = true; });
+      gs('processorReviewBatch', ids, action, remarks, session.username, session.password).then(function (result) {
+        reportBatchResult(result, action === 'forward' ? 'forwarded' : 'rejected');
+        procSelectedIds.clear();
+        loadProcessorQueue(session);
+      }).catch(function (err) {
+        btns.forEach(function (b) { b.disabled = false; });
+        toast(err && err.message ? err.message : String(err), 'error');
+      });
     }
 
     // ================= Approver Queue =================
     viewLoaders.approver = function (session) { loadApproverQueue(session); };
 
+    var apprRowsCache = [];
+    var apprSelectedIds = new Set();
+
     function loadApproverQueue(session) {
       var container = document.getElementById('appr-results');
       container.innerHTML = '<p class="empty-state">Loading…</p>';
       gs('getPendingForApprover', session.username, session.password).then(function (rows) {
+        apprRowsCache = rows;
+        apprSelectedIds.clear();
         renderApproverQueue(rows, session);
       }).catch(function (err) {
         container.innerHTML = '<p class="empty-state">Error loading queue.</p>';
@@ -486,17 +615,71 @@
       });
     }
 
+    /** Filter/toolbar chrome, built once per load. Table body itself is rendered by renderApproverTable. */
     function renderApproverQueue(rows, session) {
       var container = document.getElementById('appr-results');
       if (!rows.length) {
         container.innerHTML = '<p class="empty-state">No requests awaiting approval.</p>';
         return;
       }
+      container.innerHTML =
+        '<div class="field-group">' +
+          '<label for="appr-filter">Filter by name</label>' +
+          '<input type="text" id="appr-filter" placeholder="Type a name…">' +
+        '</div>' +
+        '<div class="btn-row tight" id="appr-bulk-toolbar" style="display:none;">' +
+          '<span id="appr-bulk-count"></span>' +
+          '<button class="btn btn-approve" id="appr-bulk-approve-open">Approve Selected</button>' +
+          '<button class="btn btn-reject btn-outline" id="appr-bulk-reject-open">Reject Selected</button>' +
+        '</div>' +
+        '<div class="review-inline" id="appr-bulk-approve-panel">' +
+          '<label class="atd-toggle"><input type="checkbox" id="appr-bulk-atd"> ATD Compliant (per auditor) — applies to all selected</label>' +
+          '<textarea placeholder="Remarks (applied to all selected)" id="appr-bulk-approve-remarks"></textarea>' +
+          '<div class="row-actions">' +
+            '<button class="btn btn-approve" id="appr-bulk-approve-confirm">Confirm Approve Selected</button>' +
+            '<button class="btn btn-outline" id="appr-bulk-approve-cancel">Cancel</button>' +
+          '</div>' +
+        '</div>' +
+        '<div class="review-inline" id="appr-bulk-reject-panel">' +
+          '<textarea placeholder="Remarks (applied to all selected)" id="appr-bulk-reject-remarks"></textarea>' +
+          '<div class="row-actions">' +
+            '<button class="btn btn-reject" id="appr-bulk-reject-confirm">Confirm Reject Selected</button>' +
+            '<button class="btn btn-outline" id="appr-bulk-reject-cancel">Cancel</button>' +
+          '</div>' +
+        '</div>' +
+        '<div id="appr-table-area"></div>';
+
+      document.getElementById('appr-filter').addEventListener('input', function () {
+        applyApproverFilter(session);
+      });
+      wireApproverBulkToolbar(session);
+      renderApproverTable(rows, session);
+    }
+
+    function applyApproverFilter(session) {
+      var q = document.getElementById('appr-filter').value.trim().toLowerCase();
+      var filtered = !q ? apprRowsCache : apprRowsCache.filter(function (r) {
+        return String(r.name || '').toLowerCase().indexOf(q) !== -1;
+      });
+      renderApproverTable(filtered, session);
+    }
+
+    function renderApproverTable(rows, session) {
+      var area = document.getElementById('appr-table-area');
+      if (!rows.length) {
+        area.innerHTML = '<p class="empty-state">No requests match that name.</p>';
+        updateApproverBulkToolbar();
+        return;
+      }
+      var allChecked = rows.every(function (r) { return apprSelectedIds.has(r.requestId); });
       var html = '<div class="table-scroll"><table class="ledger-table"><thead><tr>' +
+        '<th><input type="checkbox" id="appr-select-all"' + (allChecked ? ' checked' : '') + '></th>' +
         '<th>Name</th><th>Branch</th><th>Amount</th><th>Cutoff</th><th>Working Days</th><th>Processor Remarks</th><th>Actions</th>' +
         '</tr></thead><tbody>';
       rows.forEach(function (r) {
+        var checked = apprSelectedIds.has(r.requestId) ? ' checked' : '';
         html += '<tr>' +
+          '<td><input type="checkbox" class="appr-row-select" data-id="' + r.requestId + '"' + checked + '></td>' +
           '<td>' + r.name + '</td>' +
           '<td>' + r.branch + '</td>' +
           '<td class="num">' + formatCurrency(r.amount) + '</td>' +
@@ -520,15 +703,15 @@
           '</tr>';
       });
       html += '</tbody></table></div>';
-      container.innerHTML = html;
+      area.innerHTML = html;
 
-      container.querySelectorAll('[data-open]').forEach(function (btn) {
+      area.querySelectorAll('[data-open]').forEach(function (btn) {
         btn.addEventListener('click', function () {
           document.getElementById('appr-inline-' + btn.dataset.open).classList.add('show');
         });
       });
 
-      container.querySelectorAll('[data-confirm]').forEach(function (btn) {
+      area.querySelectorAll('[data-confirm]').forEach(function (btn) {
         btn.addEventListener('click', function () {
           var id = btn.dataset.id;
           var action = btn.dataset.confirm;
@@ -548,6 +731,72 @@
             toast(err && err.message ? err.message : String(err), 'error');
           });
         });
+      });
+
+      document.getElementById('appr-select-all').addEventListener('change', function (e) {
+        rows.forEach(function (r) {
+          if (e.target.checked) apprSelectedIds.add(r.requestId); else apprSelectedIds.delete(r.requestId);
+        });
+        renderApproverTable(rows, session);
+      });
+      area.querySelectorAll('.appr-row-select').forEach(function (cb) {
+        cb.addEventListener('change', function () {
+          if (cb.checked) apprSelectedIds.add(cb.dataset.id); else apprSelectedIds.delete(cb.dataset.id);
+          updateApproverBulkToolbar();
+        });
+      });
+
+      updateApproverBulkToolbar();
+    }
+
+    function updateApproverBulkToolbar() {
+      var n = apprSelectedIds.size;
+      var toolbar = document.getElementById('appr-bulk-toolbar');
+      if (!toolbar) return;
+      toolbar.style.display = n > 0 ? 'flex' : 'none';
+      document.getElementById('appr-bulk-count').textContent = n > 0 ? (n + ' selected') : '';
+      if (n === 0) {
+        document.getElementById('appr-bulk-approve-panel').classList.remove('show');
+        document.getElementById('appr-bulk-reject-panel').classList.remove('show');
+      }
+    }
+
+    function wireApproverBulkToolbar(session) {
+      document.getElementById('appr-bulk-approve-open').addEventListener('click', function () {
+        document.getElementById('appr-bulk-approve-panel').classList.add('show');
+      });
+      document.getElementById('appr-bulk-approve-cancel').addEventListener('click', function () {
+        document.getElementById('appr-bulk-approve-panel').classList.remove('show');
+      });
+      document.getElementById('appr-bulk-approve-confirm').addEventListener('click', function () {
+        var atd = document.getElementById('appr-bulk-atd').checked;
+        var remarks = document.getElementById('appr-bulk-approve-remarks').value.trim();
+        runApproverBatch(session, 'approve', atd, remarks);
+      });
+      document.getElementById('appr-bulk-reject-open').addEventListener('click', function () {
+        document.getElementById('appr-bulk-reject-panel').classList.add('show');
+      });
+      document.getElementById('appr-bulk-reject-cancel').addEventListener('click', function () {
+        document.getElementById('appr-bulk-reject-panel').classList.remove('show');
+      });
+      document.getElementById('appr-bulk-reject-confirm').addEventListener('click', function () {
+        var remarks = document.getElementById('appr-bulk-reject-remarks').value.trim();
+        if (!remarks) { toast('Remarks are required to reject.', 'error'); return; }
+        runApproverBatch(session, 'reject', false, remarks);
+      });
+    }
+
+    function runApproverBatch(session, action, atd, remarks) {
+      var ids = Array.from(apprSelectedIds);
+      var btns = document.querySelectorAll('#appr-bulk-toolbar button, #appr-bulk-approve-confirm, #appr-bulk-reject-confirm');
+      btns.forEach(function (b) { b.disabled = true; });
+      gs('approverReviewBatch', ids, action, atd, remarks, session.username, session.password).then(function (result) {
+        reportBatchResult(result, action === 'approve' ? 'approved' : 'rejected');
+        apprSelectedIds.clear();
+        loadApproverQueue(session);
+      }).catch(function (err) {
+        btns.forEach(function (b) { b.disabled = false; });
+        toast(err && err.message ? err.message : String(err), 'error');
       });
     }
 
