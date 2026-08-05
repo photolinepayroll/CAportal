@@ -358,6 +358,18 @@
       return opts;
     }
 
+    var CA_AMOUNTS = [500, 1000, 1500, 2000];
+
+    /** Options for the Processor's amount-correction dropdown, pre-selecting the request's current amount. */
+    function buildAmountOptions_(currentAmount) {
+      var current = Number(currentAmount);
+      var opts = '';
+      CA_AMOUNTS.forEach(function (amt) {
+        opts += '<option value="' + amt + '"' + (amt === current ? ' selected' : '') + '>' + formatCurrency(amt) + '</option>';
+      });
+      return opts;
+    }
+
     // ---------- session (real login, one account = one role; "admin" role can access everything) ----------
     var SESSION_KEY = 'ca_portal_session';
 
@@ -540,6 +552,10 @@
               '<button class="btn btn-reject btn-outline" data-action="reject" data-id="' + r.requestId + '">Reject</button>' +
             '</div>' +
             '<div class="review-inline" id="proc-inline-' + r.requestId + '">' +
+              '<div class="field-group">' +
+                '<label for="proc-amount-' + r.requestId + '">Amount (edit before forwarding if needed)</label>' +
+                '<select id="proc-amount-' + r.requestId + '">' + buildAmountOptions_(r.amount) + '</select>' +
+              '</div>' +
               '<textarea placeholder="Remarks" id="proc-remarks-' + r.requestId + '"></textarea>' +
               '<div class="row-actions">' +
                 '<button class="btn" data-confirm="forward" data-id="' + r.requestId + '">Confirm Forward</button>' +
@@ -568,9 +584,10 @@
             return;
           }
           var remarks = document.getElementById('proc-remarks-' + id).value.trim();
+          var newAmount = document.getElementById('proc-amount-' + id).value;
           if (action === 'reject' && !remarks) { toast('Remarks are required to reject.', 'error'); return; }
           btn.disabled = true;
-          gs('processorReview', id, action, remarks, session.username, session.password).then(function () {
+          gs('processorReview', id, action, remarks, newAmount, session.username, session.password).then(function () {
             toast(action === 'forward' ? 'Forwarded to Approver.' : 'Request rejected.', 'success');
             loadProcessorQueue(session);
           }).catch(function (err) {
