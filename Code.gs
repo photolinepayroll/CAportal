@@ -548,8 +548,11 @@ function setRowFields_(rowIndex, fields) {
 /**
  * Processor reviews a Pending request.
  * action: 'forward' (Pending -> Processing) or 'reject' (Pending -> Rejected, remarks required).
+ * newAmount (only consulted when action === 'forward'): the Processor's corrected CA amount. Must
+ * be one of CA_AMOUNTS. If it differs from the request's current amount, the change is written and
+ * a note is auto-prepended to PROCESSOR_REMARKS so the Approver/HR can see the correction.
  */
-function processorReview(requestId, action, remarks, username, password) {
+function processorReview(requestId, action, remarks, newAmount, username, password) {
   requireAccess_(username, password, ROLES.PROCESSOR);
   var req = findRequestByIdOrThrow_(requestId);
   if (req.status !== STATUS.PENDING) {
@@ -559,11 +562,27 @@ function processorReview(requestId, action, remarks, username, password) {
     throw new Error('Remarks are required when rejecting a request.');
   }
 
-  var newStatus = action === 'forward' ? STATUS.PROCESSING : STATUS.REJECTED;
-  setRowFields_(req.rowIndex, {
-    STATUS: newStatus,
-    PROCESSOR_REMARKS: remarks || ''
-  });
+  var finalRemarks = remarks || '';
+  var fields = {
+    STATUS: action === 'forward' ? STATUS.PROCESSING : STATUS.REJECTED,
+    PROCESSOR_REMARKS: finalRemarks
+  };
+
+  if (action === 'forward' && newAmount !== undefined && newAmount !== null && newAmount !== '') {
+    var amt = Number(newAmount);
+    if (CA_AMOUNTS.indexOf(amt) === -1) {
+      throw new Error('Amount must be one of: ' + CA_AMOUNTS.join(', ') + '.');
+    }
+    if (amt !== Number(req.amount)) {
+      fields.AMOUNT = amt;
+      fields.PROCESSOR_REMARKS = (
+        'Amount corrected from ₱' + req.amount + ' to ₱' + amt + '.' +
+        (finalRemarks ? ' ' + finalRemarks : '')
+      ).trim();
+    }
+  }
+
+  setRowFields_(req.rowIndex, fields);
   return { success: true };
 }
 
