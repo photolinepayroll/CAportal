@@ -57,6 +57,41 @@ var ROLES_TAB = 'Roles';
 var MASTERLIST_TAB = 'Masterlist';
 var SETTINGS_TAB = 'Settings';
 
+/**
+ * CacheService.getScriptCache() is shared across every user/execution — appropriate here since
+ * all roles read the same spreadsheet-backed data. TTLs for Roles/Masterlist are pure safety nets
+ * (those tabs are only ever edited by hand in the Sheet, so a short staleness window is fine);
+ * Requests/Settings TTLs are also safety nets since every write path explicitly invalidates.
+ */
+var CACHE_KEYS = {
+  REQUESTS: 'cache_requests_v1',
+  ROLES: 'cache_roles_v1',
+  MASTERLIST: 'cache_masterlist_v1',
+  SETTINGS: 'cache_settings_v1'
+};
+var CACHE_TTL = { REQUESTS: 300, ROLES: 1800, MASTERLIST: 900, SETTINGS: 120 };
+
+function cacheGetOrSet_(key, ttlSeconds, computeFn) {
+  var cache = CacheService.getScriptCache();
+  try {
+    var cached = cache.get(key);
+    if (cached !== null) return JSON.parse(cached);
+  } catch (e) {
+    // Corrupt cache entry — fall through and recompute.
+  }
+  var value = computeFn();
+  try {
+    cache.put(key, JSON.stringify(value), ttlSeconds);
+  } catch (e) {
+    // Value too large for the 100KB/key limit or other put failure — not fatal, just uncached this time.
+  }
+  return value;
+}
+
+function cacheInvalidate_(key) {
+  CacheService.getScriptCache().remove(key);
+}
+
 // 1-based column indices for the Requests tab.
 var COL = {
   TIMESTAMP: 1,
@@ -182,25 +217,41 @@ function getSettingsSheet_() {
   return sheet;
 }
 
+function getSettingsData_() {
+  return cacheGetOrSet_(CACHE_KEYS.SETTINGS, CACHE_TTL.SETTINGS, function () {
+    var sheet = getSettingsSheet_();
+    var data = sheet.getDataRange().getValues();
+    var map = {};
+    for (var i = 1; i < data.length; i++) {
+      map[String(data[i][0]).trim()] = String(data[i][1]).trim();
+    }
+    return map;
+  });
+}
+
 function getSetting_(key) {
-  var sheet = getSettingsSheet_();
-  var data = sheet.getDataRange().getValues();
-  for (var i = 1; i < data.length; i++) {
-    if (String(data[i][0]).trim() === key) return String(data[i][1]).trim();
-  }
-  return '';
+  return getSettingsData_()[key] || '';
 }
 
 function setSetting_(key, value) {
   var sheet = getSettingsSheet_();
   var data = sheet.getDataRange().getValues();
+  var found = false;
   for (var i = 1; i < data.length; i++) {
     if (String(data[i][0]).trim() === key) {
       sheet.getRange(i + 1, 2).setValue(value);
-      return;
+      found = true;
+      break;
     }
   }
-  sheet.appendRow([key, value]);
+  if (!found) sheet.appendRow([key, value]);
+  cacheInvalidate_(CACHE_KEYS.SETTINGS);
+}
+
+function getMasterlistData_() {
+  return cacheGetOrSet_(CACHE_KEYS.MASTERLIST, CACHE_TTL.MASTERLIST, function () {
+    return getMasterlistSheet_().getDataRange().getValues();
+  });
 }
 
 /** True only if Last Name+First Name+Middle Name+Date of Birth all match the same Masterlist row (trimmed, case-insensitive). */
@@ -209,8 +260,7 @@ function isValidEmployee_(lastName, firstName, middleName, birthday) {
   var needleFirst = String(firstName).trim().toLowerCase();
   var needleMiddle = normalizeMiddleName_(middleName);
   var needleBirthday = normalizeDateForCompare_(birthday);
-  var sheet = getMasterlistSheet_();
-  var data = sheet.getDataRange().getValues();
+  var data = getMasterlistData_();
   for (var i = 1; i < data.length; i++) {
     if (String(data[i][0]).trim().toLowerCase() === needleLast &&
       String(data[i][1]).trim().toLowerCase() === needleFirst &&
@@ -311,7 +361,10 @@ function computeCutoffPeriod_() {
 function ensureRequestHeaders_() {
   var sheet = getRequestsSheet_();
   var range = sheet.getRange(1, 1, 1, REQUEST_HEADERS.length);
-  range.setValues([REQUEST_HEADERS]);
+  var current = range.getValues()[0];
+  var matches = current.length === REQUEST_HEADERS.length &&
+    current.every(function (v, i) { return String(v) === REQUEST_HEADERS[i]; });
+  if (!matches) range.setValues([REQUEST_HEADERS]);
 }
 
 /**
@@ -322,13 +375,18 @@ function ensureRequestHeaders_() {
  * sessionStorage so the user isn't logging in again on every click.
  */
 
+function getRolesData_() {
+  return cacheGetOrSet_(CACHE_KEYS.ROLES, CACHE_TTL.ROLES, function () {
+    return getRolesSheet_().getDataRange().getValues();
+  });
+}
+
 /** Looks up a Username+Password match in the Roles tab. Returns {username, role, name} or null. */
 function findUser_(username, password) {
   var needleUser = String(username || '').trim().toLowerCase();
   var needlePass = String(password || '').trim();
   if (!needleUser || !needlePass) return null;
-  var sheet = getRolesSheet_();
-  var data = sheet.getDataRange().getValues();
+  var data = getRolesData_();
   for (var i = 1; i < data.length; i++) {
     var rowUser = String(data[i][0]).trim().toLowerCase();
     var rowPass = String(data[i][1]).trim();
@@ -429,12 +487,14 @@ function rowToRequestObject_(row, rowIndex) {
 
 /** Returns every request row as an object. rowIndex is 1-based and includes the header row offset. */
 function getAllRequests_() {
-  var sheet = getRequestsSheet_();
-  var lastRow = sheet.getLastRow();
-  if (lastRow < 2) return [];
-  var values = sheet.getRange(2, 1, lastRow - 1, REQUEST_HEADERS.length).getValues();
-  return values.map(function (row, i) {
-    return rowToRequestObject_(row, i + 2);
+  return cacheGetOrSet_(CACHE_KEYS.REQUESTS, CACHE_TTL.REQUESTS, function () {
+    var sheet = getRequestsSheet_();
+    var lastRow = sheet.getLastRow();
+    if (lastRow < 2) return [];
+    var values = sheet.getRange(2, 1, lastRow - 1, REQUEST_HEADERS.length).getValues();
+    return values.map(function (row, i) {
+      return rowToRequestObject_(row, i + 2);
+    });
   });
 }
 
@@ -499,6 +559,7 @@ function createRequest(data) {
     row[COL.FORWARDED_TO_HR - 1] = '';
 
     sheet.appendRow(row);
+    cacheInvalidate_(CACHE_KEYS.REQUESTS);
     return { success: true, requestId: requestId, creditingDate: creditingDate, cutoffPeriod: cutoffPeriod };
   } finally {
     lock.releaseLock();
@@ -583,6 +644,7 @@ function processorReview(requestId, action, remarks, newAmount, username, passwo
   }
 
   setRowFields_(req.rowIndex, fields);
+  cacheInvalidate_(CACHE_KEYS.REQUESTS);
   return { success: true };
 }
 
@@ -615,6 +677,7 @@ function approverReview(requestId, action, atdCompliance, remarks, username, pas
       APPROVER_REMARKS: remarks || ''
     });
   }
+  cacheInvalidate_(CACHE_KEYS.REQUESTS);
   return { success: true };
 }
 
@@ -650,6 +713,7 @@ function processorReviewBatch(requestIds, action, remarks, username, password) {
       setRowFields_(req.rowIndex, { STATUS: newStatus, PROCESSOR_REMARKS: remarks || '' });
       succeeded.push({ requestId: id });
     });
+    cacheInvalidate_(CACHE_KEYS.REQUESTS);
   } finally {
     lock.releaseLock();
   }
@@ -701,6 +765,7 @@ function approverReviewBatch(requestIds, action, atdCompliance, remarks, usernam
       }
       succeeded.push({ requestId: id });
     });
+    cacheInvalidate_(CACHE_KEYS.REQUESTS);
   } finally {
     lock.releaseLock();
   }
