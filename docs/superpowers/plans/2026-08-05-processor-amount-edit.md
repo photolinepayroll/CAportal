@@ -246,8 +246,9 @@ Expected output: `Admin.html main script: syntax OK`
 cd "d:/CASH ADVANCE PORTAL" && grep -n "proc-amount-" Admin.html
 ```
 
-Expected: two matches — one building the `<select id="proc-amount-' + r.requestId + '">"` in the
-row template, one reading `document.getElementById('proc-amount-' + id)` in the confirm handler.
+Expected: three matches — the `<label for="proc-amount-' + r.requestId + '">` and
+`<select id="proc-amount-' + r.requestId + '">` in the row template, and
+`document.getElementById('proc-amount-' + id)` in the confirm handler.
 
 - [ ] **Step 6: Commit**
 
