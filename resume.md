@@ -40,6 +40,14 @@ and iterating on real feedback.
    load (fixed before the login rework, still holds).
 10. Moved the Admin.html logout affordance from a small footer text link to a proper button in the
     header, next to the date label — only shown once authenticated.
+11. Added a live name filter and batch approve/reject to both the Processor and Approver queues in
+    `Admin.html`, matching the owner's separate `attendance-app` admin dashboard's UX. New
+    `processorReviewBatch`/`approverReviewBatch` in `Code.gs` validate access once, read the sheet
+    once, and collect per-row failures (e.g. a request already actioned by someone else) instead of
+    aborting the whole batch — see `reportBatchResult()` in `Admin.html` for how that's surfaced to
+    staff. Approver's batch-approve uses one shared ATD-compliant checkbox + one shared remarks box
+    applied to every selected request; batch-reject (either queue) uses one shared remarks box.
+    Single-row actions are untouched.
 
 ## Open items / not yet done
 - **Login brute-force protection**: flagged to the owner, not yet implemented. `findUser_`/`login`
@@ -55,10 +63,11 @@ and iterating on real feedback.
 - No automated tests exist (Apps Script has no local test runner in this setup) — verification has
   been entirely manual, walking the chat flow end-to-end after each change. See the Verification
   section pattern in past plans for what to click through.
-- **Pending deploy**: as of the last session, the logout-button-in-header change (`Admin.html`,
-  commit `ce2ef00`) was committed/pushed to GitHub but had not yet been pasted into the Apps
-  Script editor + redeployed as a new version — confirm this has happened before assuming it's
-  live for staff.
+- **Pending deploy**: as of this session, both the logout-button-in-header change (`Admin.html`,
+  commit `ce2ef00`) and the name-filter/batch-approve change (`Admin.html` + `Code.gs`, commit
+  `3933c16`) are committed/pushed to GitHub but had not yet been pasted into the Apps Script
+  editor + redeployed as a new version — confirm this has happened before assuming either is live
+  for staff.
 
 ## Deploy checklist after pulling changes from this repo
 1. Open the bound Sheet → Extensions → Apps Script.
