@@ -1148,10 +1148,10 @@
         '</div>';
     }
 
-    function buildForAuthorizationPrintHtml_(rows, preparedByName) {
+    function buildForAuthorizationPrintHtml_(rows) {
       var total = rows.reduce(function (sum, r) { return sum + Number(r.amount || 0); }, 0);
       var html = '<div class="print-header">' +
-        '<p class="print-title">Photoline — CA Disbursement Summary (Pending Authorization)</p>' +
+        '<p class="print-title">Cash Advance Disbursement</p>' +
         '<p class="print-meta">Generated ' + formatDate(new Date()) + ' &middot; ' + rows.length + ' approved request(s)</p>' +
         '</div>';
 
@@ -1173,7 +1173,7 @@
       html += '<p class="print-total">Total to disburse: <strong>' + formatCurrency(total) + '</strong> across ' + rows.length + ' request(s)</p>';
 
       html += '<div class="print-signatories">' +
-        buildSignatoryBlock_('Prepared by', preparedByName) +
+        buildSignatoryBlock_('Prepared by', '') +
         buildSignatoryBlock_('Reviewed by', '') +
         buildSignatoryBlock_('Approved by', '') +
         '</div>';
@@ -1182,8 +1182,7 @@
 
     document.getElementById('auth-for-export-pdf').addEventListener('click', function () {
       if (!authForRowsCache.length) { toast('Nothing to export.', 'error'); return; }
-      var session = getSession();
-      document.getElementById('pdf-print-area').innerHTML = buildForAuthorizationPrintHtml_(authForRowsCache, session ? session.name : '');
+      document.getElementById('pdf-print-area').innerHTML = buildForAuthorizationPrintHtml_(authForRowsCache);
       window.print();
     });
 
@@ -1295,8 +1294,8 @@
 
     function buildBatchPrintHtml_(batch) {
       var html = '<div class="print-header">' +
-        '<p class="print-title">Photoline — Transaction ' + batch.batchId + '</p>' +
-        '<p class="print-meta">Authorized ' + formatDate(batch.dateAuthorized) + ' by ' + (batch.authorizedBy || '—') + ' &middot; ' + batch.count + ' request(s)</p>' +
+        '<p class="print-title">Cash Advance Disbursement</p>' +
+        '<p class="print-meta">Transaction ' + batch.batchId + ' &middot; Authorized ' + formatDate(batch.dateAuthorized) + ' by ' + (batch.authorizedBy || '—') + ' &middot; ' + batch.count + ' request(s)</p>' +
         '</div>';
       html += '<table class="print-table"><thead><tr>' +
         '<th>Request ID</th><th>Name</th><th>Branch</th><th>Amount</th><th>Cutoff</th><th>ATD</th><th>Date Approved</th>' +
@@ -1315,7 +1314,7 @@
       html += '</tbody></table>';
       html += '<p class="print-total">Total disbursed: <strong>' + formatCurrency(batch.totalAmount) + '</strong> across ' + batch.count + ' request(s)</p>';
       html += '<div class="print-signatories">' +
-        buildSignatoryBlock_('Prepared by', batch.authorizedBy || '') +
+        buildSignatoryBlock_('Prepared by', '') +
         buildSignatoryBlock_('Reviewed by', '') +
         buildSignatoryBlock_('Approved by', '') +
         '</div>';
