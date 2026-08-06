@@ -112,9 +112,11 @@
   .btn-outline { background: transparent; color: var(--ink); }
   .btn-approve { border-color: var(--approved); background: var(--approved); }
   .btn-reject { border-color: var(--rejected); background: var(--rejected); }
-  .btn-reject.btn-outline, .btn-approve.btn-outline { background: transparent; }
+  .btn-hold { border-color: var(--pending); background: var(--pending); }
+  .btn-reject.btn-outline, .btn-approve.btn-outline, .btn-hold.btn-outline { background: transparent; }
   .btn-reject.btn-outline { color: var(--rejected); }
   .btn-approve.btn-outline { color: var(--approved); }
+  .btn-hold.btn-outline { color: var(--pending); }
   .btn-row { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 20px; }
   .btn-row.tight { margin-top: 0; margin-bottom: 20px; }
 
@@ -132,6 +134,8 @@
   }
   .ledger-table td { padding: 12px 10px; border-bottom: 1px solid var(--paper-line); font-size: 14px; vertical-align: top; }
   .ledger-table tbody tr:hover { background: rgba(31,45,61,0.03); }
+  .ledger-table tbody tr.clickable { cursor: pointer; }
+  .ledger-table tbody tr.clickable:hover { background: rgba(31,45,61,0.06); }
   .ledger-table .num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
   .ledger-table .req-id { font-family: var(--font-mono); font-size: 11px; color: var(--slate); }
 
@@ -246,7 +250,7 @@
       <nav class="ledger-nav">
         <div class="ledger-tab" data-view="processor">Processor <span class="lock-icon">&#128274;</span></div>
         <div class="ledger-tab" data-view="approver">Approver <span class="lock-icon">&#128274;</span></div>
-        <div class="ledger-tab" data-view="hr">HR Summary <span class="lock-icon">&#128274;</span></div>
+        <div class="ledger-tab" data-view="authorizer">Authorizer <span class="lock-icon">&#128274;</span></div>
       </nav>
 
       <div class="ledger-card">
@@ -265,10 +269,10 @@
           <div id="appr-results"></div>
         </section>
 
-        <!-- ===== HR Summary ===== -->
-        <section class="view-panel" id="view-hr">
-          <p class="panel-title">HR Disbursement Summary</p>
-          <p class="panel-subtitle">Approved requests, ready for disbursement</p>
+        <!-- ===== Authorizer ===== -->
+        <section class="view-panel" id="view-authorizer">
+          <p class="panel-title">Authorizer</p>
+          <p class="panel-subtitle">Authorize approved requests for disbursement</p>
 
           <div class="window-panel" id="ca-window-panel">
             <div class="window-status" id="ca-window-status">Loading CA window status…</div>
@@ -280,12 +284,22 @@
           </div>
 
           <div class="btn-row tight">
-            <button class="btn btn-outline" id="hr-refresh" type="button">Refresh</button>
-            <button class="btn" id="hr-export" type="button">Export CSV</button>
-            <button class="btn btn-outline" id="hr-export-pdf" type="button">Export PDF</button>
+            <button class="btn" id="auth-pill-for" type="button">For Authorization</button>
+            <button class="btn btn-outline" id="auth-pill-history" type="button">Transaction History</button>
           </div>
 
-          <div id="hr-results"></div>
+          <div id="auth-for-section">
+            <div class="btn-row tight">
+              <button class="btn btn-outline" id="auth-for-refresh" type="button">Refresh</button>
+              <button class="btn" id="auth-for-export" type="button">Export CSV</button>
+              <button class="btn btn-outline" id="auth-for-export-pdf" type="button">Export PDF</button>
+            </div>
+            <div id="auth-for-results"></div>
+          </div>
+
+          <div id="auth-history-section" style="display:none;">
+            <div id="auth-history-results"></div>
+          </div>
         </section>
 
       </div>
@@ -455,7 +469,7 @@
         }
       });
 
-      var firstAllowed = ['processor', 'approver', 'hr'].filter(function (v) { return canAccess(session, v); })[0];
+      var firstAllowed = ['processor', 'approver', 'authorizer'].filter(function (v) { return canAccess(session, v); })[0];
       if (firstAllowed) goToView(firstAllowed);
     }
 
@@ -694,10 +708,13 @@
     var apprRowsCache = [];
     var apprSelectedIds = new Set();
 
+    /** Maps the #appr-status-filter option value to the STATUS string it corresponds to. */
+    var APPR_STATUS_FILTER_MAP = { processing: 'Processing', hold: 'Hold', approved: 'Approved', rejected: 'Rejected' };
+
     function loadApproverQueue(session) {
       var container = document.getElementById('appr-results');
       container.innerHTML = '<p class="empty-state">Loading…</p>';
-      gs('getPendingForApprover', session.username, session.password).then(function (rows) {
+      gs('getApproverQueue', session.username, session.password).then(function (rows) {
         apprRowsCache = rows;
         apprSelectedIds.clear();
         renderApproverQueue(rows, session);
@@ -716,6 +733,15 @@
       }
       container.innerHTML =
         '<div class="filter-row">' +
+          '<div class="field-group">' +
+            '<label for="appr-status-filter">Filter by status</label>' +
+            '<select id="appr-status-filter">' +
+              '<option value="processing">For Approval</option>' +
+              '<option value="hold">Hold</option>' +
+              '<option value="approved">Approved</option>' +
+              '<option value="rejected">Rejected</option>' +
+            '</select>' +
+          '</div>' +
           '<div class="field-group">' +
             '<label for="appr-filter">Filter by name</label>' +
             '<input type="text" id="appr-filter" placeholder="Type a name…">' +
@@ -747,6 +773,9 @@
         '</div>' +
         '<div id="appr-table-area"></div>';
 
+      document.getElementById('appr-status-filter').addEventListener('change', function () {
+        applyApproverFilter(session);
+      });
       document.getElementById('appr-filter').addEventListener('input', function () {
         applyApproverFilter(session);
       });
@@ -754,43 +783,50 @@
         applyApproverFilter(session);
       });
       wireApproverBulkToolbar(session);
-      renderApproverTable(rows, session);
+      applyApproverFilter(session);
     }
 
     function applyApproverFilter(session) {
+      var statusValue = document.getElementById('appr-status-filter').value;
+      var status = APPR_STATUS_FILTER_MAP[statusValue];
       var q = document.getElementById('appr-filter').value.trim().toLowerCase();
       var branch = document.getElementById('appr-branch-filter').value;
       var filtered = apprRowsCache.filter(function (r) {
+        var statusMatch = r.status === status;
         var nameMatch = !q || String(r.name || '').toLowerCase().indexOf(q) !== -1;
         var branchMatch = !branch || r.branch === branch;
-        return nameMatch && branchMatch;
+        return statusMatch && nameMatch && branchMatch;
       });
-      renderApproverTable(filtered, session);
+      var actionable = statusValue === 'processing' || statusValue === 'hold';
+      renderApproverTable(filtered, session, actionable);
     }
 
-    function renderApproverTable(rows, session) {
+    /** actionable: false for the read-only Approved/Rejected categories — hides checkboxes, Review button, and the bulk toolbar. */
+    function renderApproverTable(rows, session, actionable) {
       var area = document.getElementById('appr-table-area');
       if (!rows.length) {
-        area.innerHTML = '<p class="empty-state">No requests match that name.</p>';
-        updateApproverBulkToolbar();
+        area.innerHTML = '<p class="empty-state">No requests match this view.</p>';
+        updateApproverBulkToolbar(actionable);
         return;
       }
-      var allChecked = rows.every(function (r) { return apprSelectedIds.has(r.requestId); });
+      var allChecked = actionable && rows.every(function (r) { return apprSelectedIds.has(r.requestId); });
       var html = '<div class="table-scroll"><table class="ledger-table"><thead><tr>' +
-        '<th><input type="checkbox" id="appr-select-all"' + (allChecked ? ' checked' : '') + '></th>' +
-        '<th>Name</th><th>Branch</th><th>Amount</th><th>Cutoff</th><th>Working Days</th><th>Processor Remarks</th><th>Actions</th>' +
+        (actionable ? '<th><input type="checkbox" id="appr-select-all"' + (allChecked ? ' checked' : '') + '></th>' : '') +
+        '<th>Name</th><th>Branch</th><th>Amount</th><th>Cutoff</th><th>Working Days</th><th>Processor Remarks</th>' +
+        (actionable ? '<th>Actions</th>' : '') +
         '</tr></thead><tbody>';
       rows.forEach(function (r) {
         var checked = apprSelectedIds.has(r.requestId) ? ' checked' : '';
         html += '<tr>' +
-          '<td><input type="checkbox" class="appr-row-select" data-id="' + r.requestId + '"' + checked + '></td>' +
+          (actionable ? '<td><input type="checkbox" class="appr-row-select" data-id="' + r.requestId + '"' + checked + '></td>' : '') +
           '<td>' + r.name + '</td>' +
           '<td>' + r.branch + '</td>' +
           '<td class="num">' + formatCurrency(r.amount) + '</td>' +
           '<td>' + r.cutoffPeriod + '</td>' +
           '<td class="num">' + r.daysPresent + '</td>' +
-          '<td>' + (r.processorRemarks || '—') + '</td>' +
-          '<td>' +
+          '<td>' + (r.processorRemarks || '—') + '</td>';
+        if (actionable) {
+          html += '<td>' +
             '<div class="row-actions">' +
               '<button class="btn btn-approve btn-outline" data-open="' + r.requestId + '">Review</button>' +
             '</div>' +
@@ -799,15 +835,22 @@
               '<textarea placeholder="Remarks" id="appr-remarks-' + r.requestId + '"></textarea>' +
               '<div class="row-actions">' +
                 '<button class="btn btn-approve" data-confirm="approve" data-id="' + r.requestId + '">Approve</button>' +
+                (r.status === 'Processing' ? '<button class="btn btn-hold" data-confirm="hold" data-id="' + r.requestId + '">Hold</button>' : '') +
                 '<button class="btn btn-reject" data-confirm="reject" data-id="' + r.requestId + '">Reject</button>' +
                 '<button class="btn btn-outline" data-confirm="cancel" data-id="' + r.requestId + '">Cancel</button>' +
               '</div>' +
             '</div>' +
-          '</td>' +
-          '</tr>';
+            '</td>';
+        }
+        html += '</tr>';
       });
       html += '</tbody></table></div>';
       area.innerHTML = html;
+
+      if (!actionable) {
+        updateApproverBulkToolbar(actionable);
+        return;
+      }
 
       area.querySelectorAll('[data-open]').forEach(function (btn) {
         btn.addEventListener('click', function () {
@@ -828,7 +871,8 @@
           if (action === 'reject' && !remarks) { toast('Remarks are required to reject.', 'error'); return; }
           btn.disabled = true;
           gs('approverReview', id, action, atd, remarks, session.username, session.password).then(function () {
-            toast(action === 'approve' ? 'Request approved and forwarded to HR.' : 'Request rejected.', 'success');
+            var verb = action === 'approve' ? 'Request approved and forwarded to Authorizer.' : action === 'hold' ? 'Request placed on hold.' : 'Request rejected.';
+            toast(verb, 'success');
             loadApproverQueue(session);
           }).catch(function (err) {
             btn.disabled = false;
@@ -841,23 +885,23 @@
         rows.forEach(function (r) {
           if (e.target.checked) apprSelectedIds.add(r.requestId); else apprSelectedIds.delete(r.requestId);
         });
-        renderApproverTable(rows, session);
+        renderApproverTable(rows, session, actionable);
       });
       area.querySelectorAll('.appr-row-select').forEach(function (cb) {
         cb.addEventListener('change', function () {
           if (cb.checked) apprSelectedIds.add(cb.dataset.id); else apprSelectedIds.delete(cb.dataset.id);
-          updateApproverBulkToolbar();
+          updateApproverBulkToolbar(actionable);
         });
       });
 
-      updateApproverBulkToolbar();
+      updateApproverBulkToolbar(actionable);
     }
 
-    function updateApproverBulkToolbar() {
+    function updateApproverBulkToolbar(actionable) {
       var n = apprSelectedIds.size;
       var toolbar = document.getElementById('appr-bulk-toolbar');
       if (!toolbar) return;
-      toolbar.style.display = n > 0 ? 'flex' : 'none';
+      toolbar.style.display = (actionable && n > 0) ? 'flex' : 'none';
       document.getElementById('appr-bulk-count').textContent = n > 0 ? (n + ' selected') : '';
       if (n === 0) {
         document.getElementById('appr-bulk-approve-panel').classList.remove('show');
@@ -904,10 +948,27 @@
       });
     }
 
-    // ================= HR Summary =================
-    var hrRowsCache = [];
+    // ================= Authorizer =================
+    var authForRowsCache = [];
+    var authSelectedIds = new Set();
+    var authHistoryCache = [];
 
-    viewLoaders.hr = function (session) { loadHrSummary(session); loadCaWindowStatus(); };
+    viewLoaders.authorizer = function (session) { loadCaWindowStatus(); loadForAuthorization(session); };
+
+    document.getElementById('auth-pill-for').addEventListener('click', function () {
+      document.getElementById('auth-pill-for').classList.remove('btn-outline');
+      document.getElementById('auth-pill-history').classList.add('btn-outline');
+      document.getElementById('auth-for-section').style.display = '';
+      document.getElementById('auth-history-section').style.display = 'none';
+    });
+    document.getElementById('auth-pill-history').addEventListener('click', function () {
+      document.getElementById('auth-pill-history').classList.remove('btn-outline');
+      document.getElementById('auth-pill-for').classList.add('btn-outline');
+      document.getElementById('auth-for-section').style.display = 'none';
+      document.getElementById('auth-history-section').style.display = '';
+      var session = getSession();
+      if (session) loadTransactionHistory(session);
+    });
 
     function loadCaWindowStatus() {
       var statusEl = document.getElementById('ca-window-status');
@@ -946,30 +1007,40 @@
       });
     });
 
-    function loadHrSummary(session) {
-      var container = document.getElementById('hr-results');
+    function loadForAuthorization(session) {
+      var container = document.getElementById('auth-for-results');
       container.innerHTML = '<p class="empty-state">Loading…</p>';
-      gs('generateHrSummary', session.username, session.password).then(function (rows) {
-        hrRowsCache = rows;
-        renderHrSummary(rows);
+      gs('getForAuthorization', session.username, session.password).then(function (rows) {
+        authForRowsCache = rows;
+        authSelectedIds.clear();
+        renderForAuthorization(rows, session);
       }).catch(function (err) {
-        container.innerHTML = '<p class="empty-state">Error loading summary.</p>';
+        container.innerHTML = '<p class="empty-state">Error loading list.</p>';
         toast(err && err.message ? err.message : String(err), 'error');
       });
     }
 
-    function renderHrSummary(rows) {
-      var container = document.getElementById('hr-results');
+    function renderForAuthorization(rows, session) {
+      var container = document.getElementById('auth-for-results');
       if (!rows.length) {
-        container.innerHTML = '<p class="empty-state">No approved requests yet.</p>';
+        container.innerHTML = '<p class="empty-state">No approved requests awaiting authorization.</p>';
         return;
       }
       var total = rows.reduce(function (sum, r) { return sum + Number(r.amount || 0); }, 0);
-      var html = '<div class="table-scroll"><table class="ledger-table"><thead><tr>' +
+      var allChecked = rows.every(function (r) { return authSelectedIds.has(r.requestId); });
+      var html =
+        '<div class="btn-row tight" id="auth-bulk-toolbar" style="display:none;">' +
+          '<span id="auth-bulk-count"></span>' +
+          '<button class="btn btn-approve" id="auth-bulk-authorize">Authorize Selected</button>' +
+        '</div>' +
+        '<div class="table-scroll"><table class="ledger-table"><thead><tr>' +
+        '<th><input type="checkbox" id="auth-select-all"' + (allChecked ? ' checked' : '') + '></th>' +
         '<th>Request ID</th><th>Name</th><th>Branch</th><th>Amount</th><th>Cutoff</th><th>ATD</th><th>Date Approved</th>' +
         '</tr></thead><tbody>';
       rows.forEach(function (r) {
+        var checked = authSelectedIds.has(r.requestId) ? ' checked' : '';
         html += '<tr>' +
+          '<td><input type="checkbox" class="auth-row-select" data-id="' + r.requestId + '"' + checked + '></td>' +
           '<td class="req-id">' + r.requestId + '</td>' +
           '<td>' + r.name + '</td>' +
           '<td>' + r.branch + '</td>' +
@@ -982,6 +1053,49 @@
       html += '</tbody></table></div>';
       html += '<p class="summary-total">Total to disburse: <strong>' + formatCurrency(total) + '</strong> across ' + rows.length + ' request(s)</p>';
       container.innerHTML = html;
+
+      document.getElementById('auth-select-all').addEventListener('change', function (e) {
+        rows.forEach(function (r) {
+          if (e.target.checked) authSelectedIds.add(r.requestId); else authSelectedIds.delete(r.requestId);
+        });
+        renderForAuthorization(rows, session);
+      });
+      container.querySelectorAll('.auth-row-select').forEach(function (cb) {
+        cb.addEventListener('change', function () {
+          if (cb.checked) authSelectedIds.add(cb.dataset.id); else authSelectedIds.delete(cb.dataset.id);
+          updateAuthBulkToolbar();
+        });
+      });
+      document.getElementById('auth-bulk-authorize').addEventListener('click', function () {
+        var n = authSelectedIds.size;
+        if (!n) return;
+        if (!window.confirm('Authorize ' + n + ' selected request(s)? This generates a new transaction number and cannot be undone.')) return;
+        runAuthorizeBatch(session);
+      });
+
+      updateAuthBulkToolbar();
+    }
+
+    function updateAuthBulkToolbar() {
+      var n = authSelectedIds.size;
+      var toolbar = document.getElementById('auth-bulk-toolbar');
+      if (!toolbar) return;
+      toolbar.style.display = n > 0 ? 'flex' : 'none';
+      document.getElementById('auth-bulk-count').textContent = n > 0 ? (n + ' selected') : '';
+    }
+
+    function runAuthorizeBatch(session) {
+      var ids = Array.from(authSelectedIds);
+      var btn = document.getElementById('auth-bulk-authorize');
+      if (btn) btn.disabled = true;
+      gs('authorizeBatch', ids, session.username, session.password).then(function (result) {
+        reportBatchResult(result, 'authorized as ' + result.batchId);
+        authSelectedIds.clear();
+        loadForAuthorization(session);
+      }).catch(function (err) {
+        if (btn) btn.disabled = false;
+        toast(err && err.message ? err.message : String(err), 'error');
+      });
     }
 
     function toCsvValue(value) {
@@ -990,18 +1104,18 @@
       return s;
     }
 
-    document.getElementById('hr-export').addEventListener('click', function () {
-      if (!hrRowsCache.length) { toast('Nothing to export.', 'error'); return; }
+    document.getElementById('auth-for-export').addEventListener('click', function () {
+      if (!authForRowsCache.length) { toast('Nothing to export.', 'error'); return; }
       var headers = ['Request ID', 'Name', 'Branch', 'Amount', 'Cutoff Period', 'Working Days', 'ATD Compliance', 'Date Approved', 'Purpose'];
       var lines = [headers.join(',')];
-      hrRowsCache.forEach(function (r) {
+      authForRowsCache.forEach(function (r) {
         lines.push([r.requestId, r.name, r.branch, r.amount, r.cutoffPeriod, r.daysPresent, r.atdCompliance, formatDate(r.dateApproved), r.purpose].map(toCsvValue).join(','));
       });
       var blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
       var url = URL.createObjectURL(blob);
       var a = document.createElement('a');
       a.href = url;
-      a.download = 'ca-disbursement-summary-' + new Date().toISOString().slice(0, 10) + '.csv';
+      a.download = 'ca-for-authorization-' + new Date().toISOString().slice(0, 10) + '.csv';
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -1016,10 +1130,10 @@
         '</div>';
     }
 
-    function buildHrPrintHtml_(rows, preparedByName) {
+    function buildForAuthorizationPrintHtml_(rows, preparedByName) {
       var total = rows.reduce(function (sum, r) { return sum + Number(r.amount || 0); }, 0);
       var html = '<div class="print-header">' +
-        '<p class="print-title">Photoline — CA Disbursement Summary</p>' +
+        '<p class="print-title">Photoline — CA Disbursement Summary (Pending Authorization)</p>' +
         '<p class="print-meta">Generated ' + formatDate(new Date()) + ' &middot; ' + rows.length + ' approved request(s)</p>' +
         '</div>';
 
@@ -1048,17 +1162,118 @@
       return html;
     }
 
-    document.getElementById('hr-export-pdf').addEventListener('click', function () {
-      if (!hrRowsCache.length) { toast('Nothing to export.', 'error'); return; }
+    document.getElementById('auth-for-export-pdf').addEventListener('click', function () {
+      if (!authForRowsCache.length) { toast('Nothing to export.', 'error'); return; }
       var session = getSession();
-      document.getElementById('pdf-print-area').innerHTML = buildHrPrintHtml_(hrRowsCache, session ? session.name : '');
+      document.getElementById('pdf-print-area').innerHTML = buildForAuthorizationPrintHtml_(authForRowsCache, session ? session.name : '');
       window.print();
     });
 
-    document.getElementById('hr-refresh').addEventListener('click', function () {
+    document.getElementById('auth-for-refresh').addEventListener('click', function () {
       var session = getSession();
-      if (session) loadHrSummary(session);
+      if (session) loadForAuthorization(session);
     });
+
+    // ---------- Transaction History ----------
+    function loadTransactionHistory(session) {
+      var container = document.getElementById('auth-history-results');
+      container.innerHTML = '<p class="empty-state">Loading…</p>';
+      gs('getTransactionHistory', session.username, session.password).then(function (batches) {
+        authHistoryCache = batches;
+        renderTransactionHistory(batches);
+      }).catch(function (err) {
+        container.innerHTML = '<p class="empty-state">Error loading transaction history.</p>';
+        toast(err && err.message ? err.message : String(err), 'error');
+      });
+    }
+
+    function renderTransactionHistory(batches) {
+      var container = document.getElementById('auth-history-results');
+      if (!batches.length) {
+        container.innerHTML = '<p class="empty-state">No disbursement batches yet.</p>';
+        return;
+      }
+      var html = '<div class="table-scroll"><table class="ledger-table"><thead><tr>' +
+        '<th>Transaction #</th><th># Requests</th><th>Total Amount</th><th>Date Authorized</th><th>Authorized By</th>' +
+        '</tr></thead><tbody>';
+      batches.forEach(function (b, i) {
+        html += '<tr class="history-row clickable" data-index="' + i + '">' +
+          '<td class="req-id">' + b.batchId + '</td>' +
+          '<td class="num">' + b.count + '</td>' +
+          '<td class="num">' + formatCurrency(b.totalAmount) + '</td>' +
+          '<td>' + formatDate(b.dateAuthorized) + '</td>' +
+          '<td>' + (b.authorizedBy || '—') + '</td>' +
+          '</tr>' +
+          '<tr><td colspan="5" style="padding:0; border-bottom:none;"><div class="review-inline" id="auth-history-inline-' + i + '"></div></td></tr>';
+      });
+      html += '</tbody></table></div>';
+      container.innerHTML = html;
+
+      container.querySelectorAll('.history-row').forEach(function (tr) {
+        tr.addEventListener('click', function () {
+          var i = Number(tr.dataset.index);
+          var panel = document.getElementById('auth-history-inline-' + i);
+          var wasShown = panel.classList.contains('show');
+          container.querySelectorAll('.review-inline.show').forEach(function (p) { p.classList.remove('show'); });
+          if (wasShown) return;
+          panel.innerHTML = buildBatchPreviewHtml_(authHistoryCache[i]);
+          panel.classList.add('show');
+          panel.querySelector('[data-print-batch]').addEventListener('click', function () {
+            document.getElementById('pdf-print-area').innerHTML = buildBatchPrintHtml_(authHistoryCache[i]);
+            window.print();
+          });
+        });
+      });
+    }
+
+    function buildBatchPreviewHtml_(batch) {
+      var html = '<div class="table-scroll"><table class="ledger-table"><thead><tr>' +
+        '<th>Request ID</th><th>Name</th><th>Branch</th><th>Amount</th><th>Cutoff</th><th>ATD</th><th>Date Approved</th>' +
+        '</tr></thead><tbody>';
+      batch.requests.forEach(function (r) {
+        html += '<tr>' +
+          '<td class="req-id">' + r.requestId + '</td>' +
+          '<td>' + r.name + '</td>' +
+          '<td>' + r.branch + '</td>' +
+          '<td class="num">' + formatCurrency(r.amount) + '</td>' +
+          '<td>' + r.cutoffPeriod + '</td>' +
+          '<td>' + r.atdCompliance + '</td>' +
+          '<td>' + formatDate(r.dateApproved) + '</td>' +
+          '</tr>';
+      });
+      html += '</tbody></table></div>';
+      html += '<div class="row-actions" style="margin-top:12px;"><button class="btn btn-outline" data-print-batch>Export PDF</button></div>';
+      return html;
+    }
+
+    function buildBatchPrintHtml_(batch) {
+      var html = '<div class="print-header">' +
+        '<p class="print-title">Photoline — Transaction ' + batch.batchId + '</p>' +
+        '<p class="print-meta">Authorized ' + formatDate(batch.dateAuthorized) + ' by ' + (batch.authorizedBy || '—') + ' &middot; ' + batch.count + ' request(s)</p>' +
+        '</div>';
+      html += '<table class="print-table"><thead><tr>' +
+        '<th>Request ID</th><th>Name</th><th>Branch</th><th>Amount</th><th>Cutoff</th><th>ATD</th><th>Date Approved</th>' +
+        '</tr></thead><tbody>';
+      batch.requests.forEach(function (r) {
+        html += '<tr>' +
+          '<td>' + r.requestId + '</td>' +
+          '<td>' + r.name + '</td>' +
+          '<td>' + r.branch + '</td>' +
+          '<td class="num">' + formatCurrency(r.amount) + '</td>' +
+          '<td>' + r.cutoffPeriod + '</td>' +
+          '<td>' + r.atdCompliance + '</td>' +
+          '<td>' + formatDate(r.dateApproved) + '</td>' +
+          '</tr>';
+      });
+      html += '</tbody></table>';
+      html += '<p class="print-total">Total disbursed: <strong>' + formatCurrency(batch.totalAmount) + '</strong> across ' + batch.count + ' request(s)</p>';
+      html += '<div class="print-signatories">' +
+        buildSignatoryBlock_('Prepared by', batch.authorizedBy || '') +
+        buildSignatoryBlock_('Reviewed by', '') +
+        buildSignatoryBlock_('Approved by', '') +
+        '</div>';
+      return html;
+    }
 
     document.addEventListener('DOMContentLoaded', function () {
       // Under Apps Script, the Employee page is this same exec URL with no query string. On static

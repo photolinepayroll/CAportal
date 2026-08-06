@@ -21,8 +21,10 @@ function doPost(e) {
     createRequest: createRequest,
     getRequestByLastNameAndId: getRequestByLastNameAndId,
     getPendingForProcessor: getPendingForProcessor,
-    getPendingForApprover: getPendingForApprover,
-    generateHrSummary: generateHrSummary,
+    getApproverQueue: getApproverQueue,
+    getForAuthorization: getForAuthorization,
+    authorizeBatch: authorizeBatch,
+    getTransactionHistory: getTransactionHistory,
     processorReview: processorReview,
     approverReview: approverReview,
     processorReviewBatch: processorReviewBatch,
@@ -110,14 +112,18 @@ var COL = {
   ATD_COMPLIANCE: 14,
   APPROVER_REMARKS: 15,
   DATE_APPROVED: 16,
-  FORWARDED_TO_HR: 17
+  FORWARDED_TO_HR: 17,
+  TRANSACTION_BATCH_NO: 18,
+  DATE_AUTHORIZED: 19,
+  AUTHORIZED_BY: 20
 };
 
 var REQUEST_HEADERS = [
   'Timestamp', 'BRANCH', 'Name', 'Cash Advance Amount', 'Permanent Authentication Code',
   'Working Days ( days duty in this cut-off Pay)', 'Request ID', 'Purpose', 'Crediting Date (auto)',
   'Cutoff Period (auto)', 'Working Days (This Cutoff)', 'Status', 'Processor Remarks', 'ATD Compliance (Yes/No)',
-  'Approver Remarks', 'Date Approved', 'Forwarded to HR (Yes/No)'
+  'Approver Remarks', 'Date Approved', 'Forwarded to HR (Yes/No)', 'Transaction Batch No.', 'Date Authorized',
+  'Authorized By'
 ];
 
 var CA_AMOUNTS = [500, 1000, 1500, 2000];
@@ -133,8 +139,10 @@ var CA_WINDOW_OVERRIDES = {
 var STATUS = {
   PENDING: 'Pending',
   PROCESSING: 'Processing',
+  HOLD: 'Hold',
   APPROVED: 'Approved',
-  REJECTED: 'Rejected'
+  REJECTED: 'Rejected',
+  DISBURSED: 'Disbursed'
 };
 
 var CUTOFF_PERIODS = ['26-10', '11-25'];
@@ -142,7 +150,7 @@ var CUTOFF_PERIODS = ['26-10', '11-25'];
 var ROLES = {
   PROCESSOR: 'processor',
   APPROVER: 'approver',
-  HR: 'hr',
+  AUTHORIZER: 'authorizer',
   ADMIN: 'admin'
 };
 
@@ -168,7 +176,7 @@ function getRolesSheet_() {
     sheet.appendRow(['admin', 'CHANGE_ME', ROLES.ADMIN, 'Administrator']);
     sheet.appendRow(['processor1', 'CHANGE_ME', ROLES.PROCESSOR, 'PLACEHOLDER']);
     sheet.appendRow(['approver1', 'CHANGE_ME', ROLES.APPROVER, 'PLACEHOLDER']);
-    sheet.appendRow(['hr1', 'CHANGE_ME', ROLES.HR, 'PLACEHOLDER']);
+    sheet.appendRow(['authorizer1', 'CHANGE_ME', ROLES.AUTHORIZER, 'PLACEHOLDER']);
   }
   return sheet;
 }
@@ -331,9 +339,9 @@ function getCaWindowStatus() {
   };
 }
 
-/** HR-only: force the CA window open/closed, or reset to the Mon-Wed auto schedule. */
+/** Authorizer-only: force the CA window open/closed, or reset to the Mon-Wed auto schedule. */
 function setCaWindowOverride(value, username, password) {
-  requireAccess_(username, password, ROLES.HR);
+  requireAccess_(username, password, ROLES.AUTHORIZER);
   if (Object.keys(CA_WINDOW_OVERRIDES).indexOf(value) === -1) {
     throw new Error('Invalid override value: ' + value);
   }
@@ -355,6 +363,28 @@ function computeCreditingDate_() {
 function computeCutoffPeriod_() {
   var dayOfMonth = Number(Utilities.formatDate(new Date(), 'Asia/Manila', 'd'));
   return (dayOfMonth >= 11 && dayOfMonth <= 25) ? CUTOFF_PERIODS[1] : CUTOFF_PERIODS[0];
+}
+
+/**
+ * 11:00 AM on the Wednesday of the current calendar week (Asia/Manila) — always "the Wednesday
+ * on/after today," same-day if today is already Wednesday. Recomputed fresh every call, not stored
+ * per-row, so it self-resets every Monday and applies uniformly regardless of which day (Mon/Tue/Wed)
+ * a request entered Hold status. Deliberately independent of CA_WINDOW_OVERRIDE/isCaWindowOpen_ — a
+ * force-reopened window does not extend this deadline.
+ */
+function computeHoldDeadline_() {
+  var tz = 'Asia/Manila';
+  var now = new Date(Utilities.formatDate(new Date(), tz, "yyyy-MM-dd'T'00:00:00"));
+  var dow = now.getDay(); // Sun=0..Sat=6
+  var daysUntilWed = (3 - dow + 7) % 7;
+  now.setDate(now.getDate() + daysUntilWed);
+  now.setHours(11, 0, 0, 0);
+  return now;
+}
+
+/** True once "now" has passed this week's Wed-11am Hold deadline. */
+function isPastHoldDeadline_() {
+  return new Date() >= computeHoldDeadline_();
 }
 
 /** Ensures the new columns (G onward) have the correct headers. Safe to run multiple times. */
@@ -454,7 +484,7 @@ function validateNewRequest_(data) {
     var hasOpenRequest = getAllRequests_().some(function (r) {
       var haystack = normalizeNameForSearch_(r.name);
       return haystack.indexOf(needleLast) !== -1 && haystack.indexOf(needleFirst) !== -1 &&
-        (r.status === STATUS.PENDING || r.status === STATUS.PROCESSING);
+        (r.status === STATUS.PENDING || r.status === STATUS.PROCESSING || r.status === STATUS.HOLD);
     });
     if (hasOpenRequest) {
       errors.push('You already have a pending or in-review CA request. Please wait for it to be resolved before submitting another.');
@@ -481,7 +511,10 @@ function rowToRequestObject_(row, rowIndex) {
     atdCompliance: row[COL.ATD_COMPLIANCE - 1],
     approverRemarks: row[COL.APPROVER_REMARKS - 1],
     dateApproved: row[COL.DATE_APPROVED - 1],
-    forwardedToHr: row[COL.FORWARDED_TO_HR - 1]
+    forwardedToHr: row[COL.FORWARDED_TO_HR - 1],
+    transactionBatchNo: row[COL.TRANSACTION_BATCH_NO - 1],
+    dateAuthorized: row[COL.DATE_AUTHORIZED - 1],
+    authorizedBy: row[COL.AUTHORIZED_BY - 1]
   };
 }
 
@@ -519,6 +552,21 @@ function formatRequestId_(seq) {
   var padded = String(seq);
   while (padded.length < 6) padded = '0' + padded;
   return 'SCA#' + padded;
+}
+
+/** Reads-increments-writes the persisted batch/transaction counter in Settings. Caller must already hold the write lock. */
+function getNextBatchSequence_() {
+  var current = Number(getSetting_('LAST_BATCH_SEQUENCE')) || 0;
+  var next = current + 1;
+  setSetting_('LAST_BATCH_SEQUENCE', String(next));
+  return next;
+}
+
+/** e.g. 7 -> "TXN#000007" */
+function formatBatchId_(seq) {
+  var padded = String(seq);
+  while (padded.length < 6) padded = '0' + padded;
+  return 'TXN#' + padded;
 }
 
 /**
@@ -594,9 +642,21 @@ function getPendingForProcessor(username, password) {
   return getAllRequests_().filter(function (r) { return r.status === STATUS.PENDING; });
 }
 
-function getPendingForApprover(username, password) {
+/**
+ * Everything relevant to the Approver tab: currently-Processing (For Approval), Hold, Approved, and
+ * Rejected-at-the-Approver-stage rows. A Rejected row counts as "at the Approver stage" iff
+ * APPROVER_REMARKS is non-empty — approverReview/approverReviewBatch's reject branches always
+ * require non-empty remarks and are the only code path that ever writes APPROVER_REMARKS, so this
+ * reliably excludes rows the Processor rejected before they ever reached the Approver.
+ */
+function getApproverQueue(username, password) {
   requireAccess_(username, password, ROLES.APPROVER);
-  return getAllRequests_().filter(function (r) { return r.status === STATUS.PROCESSING; });
+  return getAllRequests_().filter(function (r) {
+    return r.status === STATUS.PROCESSING ||
+      r.status === STATUS.HOLD ||
+      r.status === STATUS.APPROVED ||
+      (r.status === STATUS.REJECTED && String(r.approverRemarks || '').trim() !== '');
+  });
 }
 
 function setRowFields_(rowIndex, fields) {
@@ -649,14 +709,21 @@ function processorReview(requestId, action, remarks, newAmount, username, passwo
 }
 
 /**
- * Approver reviews a Processing request.
- * action: 'approve' (Processing -> Approved, forwarded to HR) or 'reject' (Processing -> Rejected, remarks required).
+ * Approver reviews a Processing (or previously Held) request.
+ * action: 'approve' (-> Approved, forwarded to HR), 'reject' (-> Rejected, remarks required), or
+ * 'hold' (Processing -> Hold only — buying time, not a decision, so no ATD/remarks requirement).
+ * A Held request can still be approved or rejected at any time before the auto-reject trigger
+ * catches it past the Wed-11am deadline (see autoRejectExpiredHolds_).
  */
 function approverReview(requestId, action, atdCompliance, remarks, username, password) {
   requireAccess_(username, password, ROLES.APPROVER);
   var req = findRequestByIdOrThrow_(requestId);
-  if (req.status !== STATUS.PROCESSING) {
-    throw new Error('Request is not in Processing status.');
+  if (action === 'hold') {
+    if (req.status !== STATUS.PROCESSING) {
+      throw new Error('Request is not in Processing status.');
+    }
+  } else if (req.status !== STATUS.PROCESSING && req.status !== STATUS.HOLD) {
+    throw new Error('Request is not in Processing or Hold status.');
   }
   if (action === 'reject' && (!remarks || !String(remarks).trim())) {
     throw new Error('Remarks are required when rejecting a request.');
@@ -669,6 +736,11 @@ function approverReview(requestId, action, atdCompliance, remarks, username, pas
       APPROVER_REMARKS: remarks || '',
       DATE_APPROVED: new Date(),
       FORWARDED_TO_HR: 'Yes'
+    });
+  } else if (action === 'hold') {
+    setRowFields_(req.rowIndex, {
+      STATUS: STATUS.HOLD,
+      APPROVER_REMARKS: remarks || req.approverRemarks || ''
     });
   } else {
     setRowFields_(req.rowIndex, {
@@ -744,8 +816,8 @@ function approverReviewBatch(requestIds, action, atdCompliance, remarks, usernam
     (requestIds || []).forEach(function (id) {
       var req = byId[id];
       if (!req) { failed.push({ requestId: id, reason: 'Request not found.' }); return; }
-      if (req.status !== STATUS.PROCESSING) {
-        failed.push({ requestId: id, reason: 'Request is not in Processing status.' });
+      if (req.status !== STATUS.PROCESSING && req.status !== STATUS.HOLD) {
+        failed.push({ requestId: id, reason: 'Request is not in Processing or Hold status.' });
         return;
       }
       if (action === 'approve') {
@@ -773,10 +845,123 @@ function approverReviewBatch(requestIds, action, atdCompliance, remarks, usernam
   return { succeeded: succeeded, failed: failed };
 }
 
-/** HR-facing: rows where Status = Approved, ready for disbursement. CSV export happens client-side from this data. */
-function generateHrSummary(username, password) {
-  requireAccess_(username, password, ROLES.HR);
+/** Authorizer-facing: rows where Status = Approved, ready for disbursement. CSV/PDF export happens client-side from this data. */
+function getForAuthorization(username, password) {
+  requireAccess_(username, password, ROLES.AUTHORIZER);
   return getAllRequests_()
     .filter(function (r) { return r.status === STATUS.APPROVED; })
     .sort(function (a, b) { return new Date(a.dateApproved) - new Date(b.dateApproved); });
+}
+
+/**
+ * Authorizer-facing: one-click batch disbursement. Every selected request (must currently be
+ * Approved) is stamped with the same new TXN# batch id, DATE_AUTHORIZED, and AUTHORIZED_BY, and
+ * flips to Disbursed — which is exactly what makes it disappear from getForAuthorization's list.
+ * "One batch, one transaction number": the batch id/timestamp are generated once and shared across
+ * every row in this call, inside the same lock, mirroring createRequest's SCA# generation.
+ * Returns { succeeded: [{requestId}], failed: [{requestId, reason}], batchId }.
+ */
+function authorizeBatch(requestIds, username, password) {
+  requireAccess_(username, password, ROLES.AUTHORIZER);
+  if (!requestIds || !requestIds.length) {
+    throw new Error('No requests selected.');
+  }
+  var user = findUser_(username, password);
+
+  var succeeded = [];
+  var failed = [];
+  var batchId;
+
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    var byId = {};
+    getAllRequests_().forEach(function (r) { byId[r.requestId] = r; });
+
+    batchId = formatBatchId_(getNextBatchSequence_());
+    var dateAuthorized = new Date();
+
+    requestIds.forEach(function (id) {
+      var req = byId[id];
+      if (!req) { failed.push({ requestId: id, reason: 'Request not found.' }); return; }
+      if (req.status !== STATUS.APPROVED) {
+        failed.push({ requestId: id, reason: 'Request is not in Approved status (already authorized or changed by someone else).' });
+        return;
+      }
+      setRowFields_(req.rowIndex, {
+        STATUS: STATUS.DISBURSED,
+        TRANSACTION_BATCH_NO: batchId,
+        DATE_AUTHORIZED: dateAuthorized,
+        AUTHORIZED_BY: user.name || user.username
+      });
+      succeeded.push({ requestId: id });
+    });
+    cacheInvalidate_(CACHE_KEYS.REQUESTS);
+  } finally {
+    lock.releaseLock();
+  }
+
+  return { succeeded: succeeded, failed: failed, batchId: batchId };
+}
+
+/**
+ * Authorizer-facing: every past disbursement batch, newest first, grouped by TRANSACTION_BATCH_NO.
+ * Each group carries its own nested `requests` array so the client can expand a batch for preview
+ * (and print it) without a second round trip.
+ */
+function getTransactionHistory(username, password) {
+  requireAccess_(username, password, ROLES.AUTHORIZER);
+  var rows = getAllRequests_().filter(function (r) { return String(r.transactionBatchNo || '').trim() !== ''; });
+
+  var byBatch = {};
+  var order = [];
+  rows.forEach(function (r) {
+    if (!byBatch[r.transactionBatchNo]) {
+      byBatch[r.transactionBatchNo] = {
+        batchId: r.transactionBatchNo,
+        dateAuthorized: r.dateAuthorized,
+        authorizedBy: r.authorizedBy,
+        count: 0,
+        totalAmount: 0,
+        requests: []
+      };
+      order.push(r.transactionBatchNo);
+    }
+    var batch = byBatch[r.transactionBatchNo];
+    batch.count += 1;
+    batch.totalAmount += Number(r.amount) || 0;
+    batch.requests.push(r);
+  });
+
+  return order.map(function (id) { return byBatch[id]; })
+    .sort(function (a, b) { return new Date(b.dateAuthorized) - new Date(a.dateAuthorized); });
+}
+
+/**
+ * Time-driven trigger target (installed manually in the Apps Script editor's Triggers page — see
+ * deploy checklist). Never client-callable, not in the doPost whitelist. Sweeps any request still on
+ * Hold past this week's Wed-11am deadline (computeHoldDeadline_) and auto-rejects it, so a Held
+ * request can't block that week's disbursement cycle indefinitely even if no staff member acts on it.
+ */
+function autoRejectExpiredHolds_() {
+  if (!isPastHoldDeadline_()) return;
+  try {
+    var lock = LockService.getScriptLock();
+    lock.waitLock(30000);
+    try {
+      var held = getAllRequests_().filter(function (r) { return r.status === STATUS.HOLD; });
+      if (!held.length) return;
+      held.forEach(function (row) {
+        setRowFields_(row.rowIndex, {
+          STATUS: STATUS.REJECTED,
+          APPROVER_REMARKS: ('[Auto-rejected: Hold deadline (Wed 11:00 AM) passed.] ' + (row.approverRemarks || '')).trim()
+        });
+      });
+      cacheInvalidate_(CACHE_KEYS.REQUESTS);
+    } finally {
+      lock.releaseLock();
+    }
+  } catch (err) {
+    console.error('autoRejectExpiredHolds_ failed: ' + err.message);
+  }
 }
