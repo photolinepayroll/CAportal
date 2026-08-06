@@ -293,6 +293,8 @@
               <button class="btn btn-outline" id="auth-for-refresh" type="button">Refresh</button>
               <button class="btn" id="auth-for-export" type="button">Export CSV</button>
               <button class="btn btn-outline" id="auth-for-export-pdf" type="button">Export PDF</button>
+              <button class="btn btn-approve" id="auth-bulk-authorize" type="button" style="display:none;">Authorize Selected</button>
+              <span id="auth-bulk-count"></span>
             </div>
             <div id="auth-for-results"></div>
           </div>
@@ -1024,15 +1026,12 @@
       var container = document.getElementById('auth-for-results');
       if (!rows.length) {
         container.innerHTML = '<p class="empty-state">No approved requests awaiting authorization.</p>';
+        updateAuthBulkToolbar();
         return;
       }
       var total = rows.reduce(function (sum, r) { return sum + Number(r.amount || 0); }, 0);
       var allChecked = rows.every(function (r) { return authSelectedIds.has(r.requestId); });
       var html =
-        '<div class="btn-row tight" id="auth-bulk-toolbar" style="display:none;">' +
-          '<span id="auth-bulk-count"></span>' +
-          '<button class="btn btn-approve" id="auth-bulk-authorize">Authorize Selected</button>' +
-        '</div>' +
         '<div class="table-scroll"><table class="ledger-table"><thead><tr>' +
         '<th><input type="checkbox" id="auth-select-all"' + (allChecked ? ' checked' : '') + '></th>' +
         '<th>Request ID</th><th>Name</th><th>Branch</th><th>Amount</th><th>Cutoff</th><th>ATD</th><th>Date Approved</th>' +
@@ -1066,23 +1065,26 @@
           updateAuthBulkToolbar();
         });
       });
-      document.getElementById('auth-bulk-authorize').addEventListener('click', function () {
-        var n = authSelectedIds.size;
-        if (!n) return;
-        if (!window.confirm('Authorize ' + n + ' selected request(s)? This generates a new transaction number and cannot be undone.')) return;
-        runAuthorizeBatch(session);
-      });
 
       updateAuthBulkToolbar();
     }
 
     function updateAuthBulkToolbar() {
       var n = authSelectedIds.size;
-      var toolbar = document.getElementById('auth-bulk-toolbar');
-      if (!toolbar) return;
-      toolbar.style.display = n > 0 ? 'flex' : 'none';
+      var btn = document.getElementById('auth-bulk-authorize');
+      if (!btn) return;
+      btn.style.display = n > 0 ? '' : 'none';
       document.getElementById('auth-bulk-count').textContent = n > 0 ? (n + ' selected') : '';
     }
+
+    document.getElementById('auth-bulk-authorize').addEventListener('click', function () {
+      var session = getSession();
+      if (!session) return;
+      var n = authSelectedIds.size;
+      if (!n) return;
+      if (!window.confirm('Authorize ' + n + ' selected request(s)? This generates a new transaction number and cannot be undone.')) return;
+      runAuthorizeBatch(session);
+    });
 
     function runAuthorizeBatch(session) {
       var ids = Array.from(authSelectedIds);
