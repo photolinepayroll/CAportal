@@ -1,6 +1,6 @@
 # Resume Notes — CA Portal
 
-Last updated: 2026-08-06. Read `CLAUDE.md` first for how the system works; this file is about
+Last updated: 2026-08-07. Read `CLAUDE.md` first for how the system works; this file is about
 **where things stand** and **what's left to do**.
 
 ## Current state
@@ -111,6 +111,29 @@ and iterating on real feedback.
       `DATE_AUTHORIZED` (19), `AUTHORIZED_BY` (20) — self-heal into the sheet via
       `ensureRequestHeaders_()` on the next `doGet`, no manual sheet-column setup needed.
     - Full design record: `C:\Users\Gilbert\.claude\plans\addition-heres-the-plan-concurrent-fog.md`.
+18. Post-deploy UI polish on the Authorizer tab, driven by owner feedback after testing the live
+    dashboard (all `Admin.html`-only, no `Code.gs` changes in this batch):
+    - Moved "Authorize Selected" out of its own separate row into the main
+      Refresh/Export CSV/Export PDF toolbar row.
+    - Gave the toolbar a clearer visual hierarchy: "For Authorization"/"Transaction History" are now
+      a real joined segmented control (`.segmented-control`, shared border, no gap) instead of two
+      plain buttons; Refresh/Export CSV/Export PDF became a light outlined utility cluster on the
+      left, with Authorize Selected standing alone as the one filled/green action on the right
+      (`.toolbar-row`/`.toolbar-actions`).
+    - Transaction History gained its own Refresh button (previously had no toolbar at all); each
+      expanded batch preview gained an Export CSV button (`exportBatchCsv_`) next to the existing
+      Export PDF, plus a `.summary-total` line ("Total: ₱X across N request(s)") shown before both
+      export buttons so the totals are visible pre-export, not just baked into the PDF.
+    - Both PDF exports (`buildForAuthorizationPrintHtml_`, `buildBatchPrintHtml_`) retitled to a
+      single shared "Cash Advance Disbursement", and the "Prepared by" signatory line no longer
+      auto-fills the logged-in staff member's name (blank now, matching Reviewed by/Approved by).
+      The per-batch export's transaction number moved from the (now-generic) title into its meta
+      subtitle line so it's still on the printed record.
+    - Clicking "Authorize Selected" now shows a spinner + "Authorizing…" on the button and dims the
+      table with a pulsing "Processing…" overlay while the batch call is in flight
+      (`.btn-spinner`/`.table-scroll.is-processing`), so a large batch doesn't feel like a dead click.
+    - The "N selected" label next to Authorize Selected now also shows the peso total of just the
+      selected rows (not the whole list), computed client-side from `authForRowsCache`.
 
 ## Open items / not yet done
 - **Login brute-force protection**: flagged to the owner, not yet implemented. `findUser_`/`login`
@@ -126,13 +149,15 @@ and iterating on real feedback.
 - No automated tests exist (Apps Script has no local test runner in this setup) — verification has
   been entirely manual, walking the chat flow end-to-end after each change. See the Verification
   section pattern in past plans for what to click through.
-- **Pending deploy**: everything through the Approver-Hold/Authorizer-batch feature (item 17 above)
-  is implemented in `Code.gs`/`Admin.html` locally but had not yet been committed, pushed, or pasted
-  into the Apps Script editor as of this session. `Code.gs` and `Admin.html` **must** deploy together
-  — they share the renamed `getApproverQueue`/`getForAuthorization`/`authorizeBatch` function names
-  and the `hr`→`authorizer` role rename; deploying only one half breaks the Approver/Authorizer tabs
-  entirely. Two extra one-time manual steps beyond the usual paste-and-redeploy, both required
-  immediately after deploying (see `CLAUDE.md`'s Deployment section for exact steps):
+- **Pending deploy**: everything through item 18 above (Approver-Hold/Authorizer-batch feature plus
+  the follow-up UI polish) is committed and pushed to GitHub as of commit `36164a3`, but had not yet
+  been pasted into the Apps Script editor as of this session. `Code.gs` and `Admin.html` **must**
+  deploy together — they share the renamed `getApproverQueue`/`getForAuthorization`/`authorizeBatch`
+  function names and the `hr`→`authorizer` role rename; deploying only one half breaks the
+  Approver/Authorizer tabs entirely. (Item 18's changes are `Admin.html`-only, but since `Code.gs`
+  from item 17 still isn't live either, both files still need to go up together in one pass.) Two
+  extra one-time manual steps beyond the usual paste-and-redeploy, both required immediately after
+  deploying (see `CLAUDE.md`'s Deployment section for exact steps):
   1. **Roles sheet fix**: change every existing `hr` row to `authorizer` in the `Roles` tab, or that
      account gets locked out the instant the new code goes live.
   2. **Install the time-driven trigger**: Apps Script editor → Triggers → Add Trigger →

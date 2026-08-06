@@ -82,8 +82,12 @@ and its client-side checks are just UX, not security)
   batch/transaction number (sequential, generated the same way as `SCA#` request IDs, under
   `LockService`), a disbursement timestamp, and the authorizing staff member's name, then flips to
   `Disbursed`. One click always produces exactly one transaction number shared across the whole
-  batch. Past batches are browsable (and individually PDF-exportable) in the Authorizer tab's
-  Transaction History view (`getTransactionHistory`), grouped by that same batch number.
+  batch. Past batches are browsable (and individually CSV/PDF-exportable, with a totals line shown
+  before export) in the Authorizer tab's Transaction History view (`getTransactionHistory`), grouped
+  by that same batch number. Both PDF exports (For Authorization list, per-batch) share one title,
+  "Cash Advance Disbursement", and leave all three signatory lines blank (no auto-filled preparer
+  name) — the transaction number for a per-batch export lives in the print subtitle instead of the
+  title.
 - **Cutoff period**: auto-computed from today's day-of-month, never asked — 11th–25th ⇒ `11-25`,
   else ⇒ `26-10` (`computeCutoffPeriod_`).
 - **Crediting date**: auto-computed as the next Friday on/after submission day, never asked
