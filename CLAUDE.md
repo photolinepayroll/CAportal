@@ -2,8 +2,8 @@
 
 ## What this is
 Employee-facing chatbot + staff review dashboard for Cash Advance (CA) requests at Photoline, a
-Philippine retail company. Replaces a manual Google Form + spreadsheet process with a two-step
-review workflow (Processor → Approver → HR disbursement) on top of the same Google Sheet.
+Philippine retail company. Replaces a manual Google Form + spreadsheet process with a three-step
+review workflow (Processor → Approver → Authorizer disbursement) on top of the same Google Sheet.
 
 Sibling project: `photolinepayroll/payslip-chatbot` — same architecture pattern (single-file HTML,
 Google Sheet backend, Apps Script security boundary), and this project's Employee-facing UI was
@@ -44,15 +44,17 @@ the bottom of `Employee.html` and `Admin.html`.
   `ensureRequestHeaders_()` rewrites the header row on every `doGet` so it's always self-healing.
   `COL` in `Code.gs` is the single source of truth for column positions.
 - **`Roles`** — `Username | Password | Role | Name`, one row per staff account. `Role` is
-  `processor`, `approver`, `hr`, or `admin` (all-access — can open every section). Auto-created
+  `processor`, `approver`, `authorizer`, or `admin` (all-access — can open every section). Auto-created
   with placeholder accounts on first load. This is the real login table for `Admin.html` (see
-  Security below).
+  Security below). `authorizer` was renamed from `hr` — see Business rules below; if you're looking
+  at an older Sheet, existing rows still saying `hr` need a one-time manual fix to `authorizer`.
 - **`Masterlist`** — `Last Name | First Name | Middle Name | Date of Birth` in columns A–D, plus
   a `Branches` reference list in column F (unrelated to the row it sits next to — just a flat
   list used to populate the searchable branch dropdown via `getBranchList()`). This is the
   identity whitelist requests are verified against before any CA details are even asked.
 - **`Settings`** — generic `Key | Value` store. Currently holds `CA_WINDOW_OVERRIDE`
-  (`AUTO`/`FORCE_OPEN`/`FORCE_CLOSED`) and `LAST_SCA_SEQUENCE` (the running counter for request IDs).
+  (`AUTO`/`FORCE_OPEN`/`FORCE_CLOSED`), `LAST_SCA_SEQUENCE` (the running counter for request IDs),
+  and `LAST_BATCH_SEQUENCE` (the running counter for disbursement transaction/batch numbers).
 
 ## Business rules encoded in Code.gs (not just UI validation — every rule is re-checked
 server-side inside `createRequest`/`validateNewRequest_`, since `Employee.html` is unauthenticated
@@ -63,8 +65,25 @@ and its client-side checks are just UX, not security)
   `CA_AMOUNTS` server-side just like at creation, and only applied on `action === 'forward'` (never
   on reject, never in batch). If the amount actually changes, an audit note ("Amount corrected from
   ₱X to ₱Y.") is auto-prepended to `PROCESSOR_REMARKS` so the Approver/HR can see the correction.
-- **CA window**: normally open Monday–Wednesday only (`isCaWindowOpen_`, Asia/Manila). HR can
-  force it open or closed from `Admin.html`'s HR view regardless of day, for emergencies.
+- **CA window**: normally open Monday–Wednesday only (`isCaWindowOpen_`, Asia/Manila). The
+  Authorizer can force it open or closed from `Admin.html`'s Authorizer view regardless of day, for
+  emergencies.
+- **Approver Hold + auto-reject deadline**: the Approver can place a Processing request on `Hold`
+  instead of deciding immediately (`approverReview`'s `'hold'` action) — a Held request can still be
+  approved or rejected at any time. But any request still on Hold after **11:00 AM on the Wednesday
+  of the current week** (Asia/Manila, `computeHoldDeadline_`/`isPastHoldDeadline_`) gets
+  auto-rejected by `autoRejectExpiredHolds_`, a time-driven Apps Script trigger installed manually
+  in the Apps Script editor's Triggers page (not deployable via file paste — see Deployment below).
+  This deadline is a fixed calendar checkpoint, independent of `CA_WINDOW_OVERRIDE` — force-reopening
+  the window does not extend it.
+- **Authorizer batch disbursement**: once a request is `Approved`, the Authorizer selects one or
+  more `Approved` requests in `Admin.html`'s Authorizer tab and clicks "Authorize Selected"
+  (`authorizeBatch`) — every selected request is stamped with the same new `TXN#000001`-style
+  batch/transaction number (sequential, generated the same way as `SCA#` request IDs, under
+  `LockService`), a disbursement timestamp, and the authorizing staff member's name, then flips to
+  `Disbursed`. One click always produces exactly one transaction number shared across the whole
+  batch. Past batches are browsable (and individually PDF-exportable) in the Authorizer tab's
+  Transaction History view (`getTransactionHistory`), grouped by that same batch number.
 - **Cutoff period**: auto-computed from today's day-of-month, never asked — 11th–25th ⇒ `11-25`,
   else ⇒ `26-10` (`computeCutoffPeriod_`).
 - **Crediting date**: auto-computed as the next Friday on/after submission day, never asked
@@ -112,6 +131,11 @@ No `clasp` set up — deploy by pasting file contents into the Apps Script edito
 Sheet via Extensions → Apps Script) and creating a **New version** under Manage deployments.
 Editing files in the online editor and clicking Save does *not* update the live `/exec` URL by
 itself; a new version must be deployed.
+
+The Hold auto-reject feature additionally requires a **one-time manual trigger install** that
+paste-and-redeploy alone can't do: Apps Script editor → Triggers page (clock icon) → Add Trigger →
+function `autoRejectExpiredHolds_` → Time-driven → Minutes timer → every 15 minutes → Save. Persists
+across future redeploys as long as the function name doesn't change.
 
 ## Conventions
 - Every `_`-suffixed function (e.g. `getRequestsSheet_`, `isValidEmployee_`) is an internal helper,

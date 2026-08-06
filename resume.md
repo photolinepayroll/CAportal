@@ -74,6 +74,43 @@ and iterating on real feedback.
     `approverReview`, `processorReviewBatch`, `approverReviewBatch`). Also guarded
     `ensureRequestHeaders_()` to skip its header-row write on `doGet()` when the header already
     matches, instead of rewriting unconditionally on every page load.
+17. Added an Approver `Hold` status with a Wednesday-11am auto-reject deadline, and turned the
+    passive "HR Disbursement Summary" tab into an active **Authorizer** tab that batch-disburses
+    approved requests under a new sequential transaction number, plus a Transaction History view.
+    Full details:
+    - `STATUS` gained `HOLD`/`DISBURSED`. `approverReview`/`approverReviewBatch` now accept a
+      `'hold'` action (Processing → Hold, no ATD/remarks required) and both accept Processing **or**
+      Hold as the valid starting status for approve/reject.
+    - `autoRejectExpiredHolds_()` — a new time-driven trigger function (installed manually in the
+      Apps Script editor's Triggers page, **not** deployable via file paste, see below) — sweeps any
+      request still on `Hold` past `computeHoldDeadline_()` (11:00 AM Manila on the current week's
+      Wednesday, recomputed fresh every run, independent of `CA_WINDOW_OVERRIDE`) and auto-rejects it
+      with an audit-trail remark prefix.
+    - `ROLES.HR` (`'hr'`) fully renamed to `ROLES.AUTHORIZER` (`'authorizer'`) throughout `Code.gs`
+      and `Admin.html` (nav tab, panel id, `viewLoaders` key, `firstAllowed` array, seed account) —
+      **existing `Roles` sheet rows saying `hr` need a one-time manual edit to `authorizer`,
+      otherwise those accounts get locked out the moment the new code goes live.**
+    - `getPendingForApprover` → `getApproverQueue`: now returns Processing + Hold + Approved +
+      Approver-stage-Rejected rows (the last one discriminated by non-empty `APPROVER_REMARKS`, since
+      that column is only ever written by Approver actions — reliably excludes Processor-stage
+      rejects). The Approver tab gained a status filter (`For Approval`/`Hold`/`Approved`/`Rejected`);
+      the latter two render read-only (no checkboxes, no Review button).
+    - `generateHrSummary` → `getForAuthorization` (same Approved-status query, renamed role check).
+      New `authorizeBatch(requestIds, username, password)`: select rows in the Authorizer tab, click
+      "Authorize Selected" (native `window.confirm` guard, no remarks/ATD fields — true one-click),
+      and every selected row gets stamped with one shared new `TXN#000001`-style batch id (new
+      `getNextBatchSequence_`/`formatBatchId_`, mirroring the `SCA#` pattern, under the same
+      `LockService` lock), a `DATE_AUTHORIZED` timestamp, and `AUTHORIZED_BY` staff name, then flips
+      to `Disbursed` — which is what makes it vanish from the "For Authorization" list.
+    - New `getTransactionHistory` groups all requests with a `TRANSACTION_BATCH_NO` by that column
+      into past-batch summaries (newest first), rendered as a clickable-row table in the Authorizer
+      tab's Transaction History sub-view; expanding a batch shows its individual requests and an
+      "Export PDF" button scoped to just that batch (`buildBatchPrintHtml_`, reusing the exact
+      `window.print()` + hidden `#pdf-print-area` pattern from the existing PDF export).
+    - New `COL`/`REQUEST_HEADERS` entries (appended, not inserted): `TRANSACTION_BATCH_NO` (18),
+      `DATE_AUTHORIZED` (19), `AUTHORIZED_BY` (20) — self-heal into the sheet via
+      `ensureRequestHeaders_()` on the next `doGet`, no manual sheet-column setup needed.
+    - Full design record: `C:\Users\Gilbert\.claude\plans\addition-heres-the-plan-concurrent-fog.md`.
 
 ## Open items / not yet done
 - **Login brute-force protection**: flagged to the owner, not yet implemented. `findUser_`/`login`
@@ -89,15 +126,18 @@ and iterating on real feedback.
 - No automated tests exist (Apps Script has no local test runner in this setup) — verification has
   been entirely manual, walking the chat flow end-to-end after each change. See the Verification
   section pattern in past plans for what to click through.
-- **Pending deploy**: as of this session, everything through commit `97cb0dd` (logout button,
-  name/branch filters, batch approve/reject, Processor amount-edit, Tagalog→English translation,
-  HR PDF export, and the new `CacheService` caching layer — spanning `Code.gs`, `Employee.html`,
-  and `Admin.html`) is committed/pushed to GitHub but had not yet been pasted into the Apps Script
-  editor + redeployed as a new version. Deploy `Code.gs`, `Employee.html`, and `Admin.html`
-  **together** — `Code.gs`/`Admin.html` depend on each other's updated `processorReview` signature
-  (5 args → 6 args), and stale cached data could otherwise linger if the new `Code.gs` cache-
-  invalidation logic doesn't match what's live. Confirm deployment before assuming any of this is
-  live for staff.
+- **Pending deploy**: everything through the Approver-Hold/Authorizer-batch feature (item 17 above)
+  is implemented in `Code.gs`/`Admin.html` locally but had not yet been committed, pushed, or pasted
+  into the Apps Script editor as of this session. `Code.gs` and `Admin.html` **must** deploy together
+  — they share the renamed `getApproverQueue`/`getForAuthorization`/`authorizeBatch` function names
+  and the `hr`→`authorizer` role rename; deploying only one half breaks the Approver/Authorizer tabs
+  entirely. Two extra one-time manual steps beyond the usual paste-and-redeploy, both required
+  immediately after deploying (see `CLAUDE.md`'s Deployment section for exact steps):
+  1. **Roles sheet fix**: change every existing `hr` row to `authorizer` in the `Roles` tab, or that
+     account gets locked out the instant the new code goes live.
+  2. **Install the time-driven trigger**: Apps Script editor → Triggers → Add Trigger →
+     `autoRejectExpiredHolds_` → Time-driven → every 15 minutes → Save. Without this, Hold requests
+     will never auto-reject (everything else works fine either way).
 
 ## Deploy checklist after pulling changes from this repo
 1. Open the bound Sheet → Extensions → Apps Script.
