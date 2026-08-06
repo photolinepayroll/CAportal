@@ -1,6 +1,6 @@
 # Resume Notes — CA Portal
 
-Last updated: 2026-08-05. Read `CLAUDE.md` first for how the system works; this file is about
+Last updated: 2026-08-06. Read `CLAUDE.md` first for how the system works; this file is about
 **where things stand** and **what's left to do**.
 
 ## Current state
@@ -60,6 +60,20 @@ and iterating on real feedback.
     brainstorming → spec → plan → subagent-driven-implementation workflow — see
     `docs/superpowers/specs/2026-08-05-processor-amount-edit-design.md` and
     `docs/superpowers/plans/2026-08-05-processor-amount-edit.md` for the full design record.
+14. Translated all employee-facing chatbot copy in `Employee.html` from Tagalog to English
+    (comprehensive pass — greeting, quick replies, prompts, error/validation messages).
+15. Added an "Export PDF" action to the HR Disbursement Summary in `Admin.html` — HR can print
+    the approved-requests table (total amount, ATD compliance status) with three signature lines
+    (Prepared by pre-filled with the logged-in user, Reviewed by / Approved by left blank) via the
+    browser's native Print dialog (`window.print()` + `@media print` CSS). Frontend-only, no
+    `Code.gs` changes.
+16. Added a `CacheService`-backed caching layer to `Code.gs` to cut redundant Sheet reads on hot
+    paths: `Settings`, `Masterlist`, `Roles`, and `getAllRequests_()` are now wrapped with
+    `cacheGetOrSet_()` (TTLs 5–30 min depending on how often each sheet changes), invalidated
+    explicitly at the end of all five write paths (`createRequest`, `processorReview`,
+    `approverReview`, `processorReviewBatch`, `approverReviewBatch`). Also guarded
+    `ensureRequestHeaders_()` to skip its header-row write on `doGet()` when the header already
+    matches, instead of rewriting unconditionally on every page load.
 
 ## Open items / not yet done
 - **Login brute-force protection**: flagged to the owner, not yet implemented. `findUser_`/`login`
@@ -75,14 +89,15 @@ and iterating on real feedback.
 - No automated tests exist (Apps Script has no local test runner in this setup) — verification has
   been entirely manual, walking the chat flow end-to-end after each change. See the Verification
   section pattern in past plans for what to click through.
-- **Pending deploy**: as of this session, everything through commit `b6915e5` (logout button,
-  name/branch filters, batch approve/reject, and the Processor amount-edit feature — all in
-  `Admin.html` and/or `Code.gs`) is committed/pushed to GitHub but had not yet been pasted into the
-  Apps Script editor + redeployed as a new version. `Code.gs` and `Admin.html` must be deployed
-  **together** for the amount-edit feature specifically — they now depend on each other's updated
-  `processorReview` signature (5 args → 6 args), so deploying only one half would break the
-  Processor's Forward action entirely. Confirm deployment before assuming any of this is live for
-  staff.
+- **Pending deploy**: as of this session, everything through commit `97cb0dd` (logout button,
+  name/branch filters, batch approve/reject, Processor amount-edit, Tagalog→English translation,
+  HR PDF export, and the new `CacheService` caching layer — spanning `Code.gs`, `Employee.html`,
+  and `Admin.html`) is committed/pushed to GitHub but had not yet been pasted into the Apps Script
+  editor + redeployed as a new version. Deploy `Code.gs`, `Employee.html`, and `Admin.html`
+  **together** — `Code.gs`/`Admin.html` depend on each other's updated `processorReview` signature
+  (5 args → 6 args), and stale cached data could otherwise linger if the new `Code.gs` cache-
+  invalidation logic doesn't match what's live. Confirm deployment before assuming any of this is
+  live for staff.
 
 ## Deploy checklist after pulling changes from this repo
 1. Open the bound Sheet → Extensions → Apps Script.
