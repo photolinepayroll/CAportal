@@ -1108,7 +1108,14 @@
       var btn = document.getElementById('auth-bulk-authorize');
       if (!btn) return;
       btn.style.display = n > 0 ? '' : 'none';
-      document.getElementById('auth-bulk-count').textContent = n > 0 ? (n + ' selected') : '';
+      if (n > 0) {
+        var total = authForRowsCache.reduce(function (sum, r) {
+          return authSelectedIds.has(r.requestId) ? sum + Number(r.amount || 0) : sum;
+        }, 0);
+        document.getElementById('auth-bulk-count').textContent = n + ' selected · ' + formatCurrency(total);
+      } else {
+        document.getElementById('auth-bulk-count').textContent = '';
+      }
     }
 
     document.getElementById('auth-bulk-authorize').addEventListener('click', function () {
