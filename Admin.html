@@ -313,6 +313,9 @@
           </div>
 
           <div id="auth-history-section" style="display:none;">
+            <div class="row-actions" style="margin-bottom:16px;">
+              <button class="btn btn-outline" id="auth-history-refresh" type="button">Refresh</button>
+            </div>
             <div id="auth-history-results"></div>
           </div>
         </section>
@@ -1190,6 +1193,11 @@
     });
 
     // ---------- Transaction History ----------
+    document.getElementById('auth-history-refresh').addEventListener('click', function () {
+      var session = getSession();
+      if (session) loadTransactionHistory(session);
+    });
+
     function loadTransactionHistory(session) {
       var container = document.getElementById('auth-history-results');
       container.innerHTML = '<p class="empty-state">Loading…</p>';
@@ -1233,6 +1241,9 @@
           if (wasShown) return;
           panel.innerHTML = buildBatchPreviewHtml_(authHistoryCache[i]);
           panel.classList.add('show');
+          panel.querySelector('[data-csv-batch]').addEventListener('click', function () {
+            exportBatchCsv_(authHistoryCache[i]);
+          });
           panel.querySelector('[data-print-batch]').addEventListener('click', function () {
             document.getElementById('pdf-print-area').innerHTML = buildBatchPrintHtml_(authHistoryCache[i]);
             window.print();
@@ -1257,8 +1268,29 @@
           '</tr>';
       });
       html += '</tbody></table></div>';
-      html += '<div class="row-actions" style="margin-top:12px;"><button class="btn btn-outline" data-print-batch>Export PDF</button></div>';
+      html += '<p class="summary-total">Total: <strong>' + formatCurrency(batch.totalAmount) + '</strong> across ' + batch.count + ' request(s)</p>';
+      html += '<div class="row-actions" style="margin-top:12px;">' +
+        '<button class="btn btn-outline" data-csv-batch>Export CSV</button>' +
+        '<button class="btn btn-outline" data-print-batch>Export PDF</button>' +
+        '</div>';
       return html;
+    }
+
+    function exportBatchCsv_(batch) {
+      var headers = ['Request ID', 'Name', 'Branch', 'Amount', 'Cutoff Period', 'ATD Compliance', 'Date Approved'];
+      var lines = [headers.join(',')];
+      batch.requests.forEach(function (r) {
+        lines.push([r.requestId, r.name, r.branch, r.amount, r.cutoffPeriod, r.atdCompliance, formatDate(r.dateApproved)].map(toCsvValue).join(','));
+      });
+      var blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = 'ca-transaction-' + String(batch.batchId).replace('#', '') + '.csv';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
     }
 
     function buildBatchPrintHtml_(batch) {
