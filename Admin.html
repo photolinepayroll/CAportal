@@ -763,10 +763,6 @@
     /** Filter/toolbar chrome, built once per load. Table body itself is rendered by renderApproverTable. */
     function renderApproverQueue(rows, session) {
       var container = document.getElementById('appr-results');
-      if (!rows.length) {
-        container.innerHTML = '<p class="empty-state">No requests awaiting approval.</p>';
-        return;
-      }
       container.innerHTML =
         '<div class="filter-row">' +
           '<div class="field-group">' +
