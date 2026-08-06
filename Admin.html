@@ -153,6 +153,24 @@
   .toolbar-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
   .toolbar-actions span { font-family: var(--font-mono); font-size: 12px; color: var(--slate); }
 
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .btn-spinner {
+    display: inline-block; width: 12px; height: 12px; margin-right: 8px; vertical-align: -2px;
+    border: 2px solid rgba(245,242,234,0.4); border-top-color: currentColor; border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+  }
+  .btn.is-loading { cursor: wait; }
+
+  @keyframes processingPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+  .table-scroll.is-processing { position: relative; }
+  .table-scroll.is-processing table { opacity: 0.4; pointer-events: none; transition: opacity 0.2s ease; }
+  .table-scroll.is-processing::after {
+    content: 'Processing…'; position: absolute; top: 40px; left: 50%; transform: translateX(-50%);
+    font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--ink); background: var(--paper-card); padding: 8px 18px; border: 1px solid var(--paper-line);
+    border-radius: 3px; box-shadow: 0 4px 12px var(--shadow-ink); animation: processingPulse 1.1s ease-in-out infinite;
+  }
+
   .review-inline { margin-top: 10px; padding: 12px; background: rgba(31,45,61,0.03); border: 1px dashed var(--paper-line); display: none; }
   .review-inline.show { display: block; }
   .review-inline textarea { margin-bottom: 10px; }
@@ -1105,13 +1123,25 @@
     function runAuthorizeBatch(session) {
       var ids = Array.from(authSelectedIds);
       var btn = document.getElementById('auth-bulk-authorize');
-      if (btn) btn.disabled = true;
+      var scroll = document.querySelector('#auth-for-results .table-scroll');
+      var originalLabel = btn ? btn.textContent : '';
+      if (btn) {
+        btn.disabled = true;
+        btn.classList.add('is-loading');
+        btn.innerHTML = '<span class="btn-spinner"></span>Authorizing…';
+      }
+      if (scroll) scroll.classList.add('is-processing');
       gs('authorizeBatch', ids, session.username, session.password).then(function (result) {
         reportBatchResult(result, 'authorized as ' + result.batchId);
         authSelectedIds.clear();
         loadForAuthorization(session);
       }).catch(function (err) {
-        if (btn) btn.disabled = false;
+        if (btn) {
+          btn.disabled = false;
+          btn.classList.remove('is-loading');
+          btn.textContent = originalLabel;
+        }
+        if (scroll) scroll.classList.remove('is-processing');
         toast(err && err.message ? err.message : String(err), 'error');
       });
     }
