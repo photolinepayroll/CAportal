@@ -134,15 +134,24 @@ and iterating on real feedback.
       (`.btn-spinner`/`.table-scroll.is-processing`), so a large batch doesn't feel like a dead click.
     - The "N selected" label next to Authorize Selected now also shows the peso total of just the
       selected rows (not the whole list), computed client-side from `authForRowsCache`.
-19. Two small fixes after item 18, both pushed to GitHub:
-    - Added a `.nojekyll` file at the repo root so GitHub Pages serves the static mirror as plain
-      HTML/JS instead of running it through Jekyll by default — Jekyll processing was causing
-      build failures/stuck deployments unrelated to the actual site content.
-    - `renderApproverQueue` in `Admin.html` no longer hides the entire filter row (status/name/
-      branch) when the queue has zero rows across all approver-relevant statuses. Previously an
-      empty "For Approval" view meant staff couldn't switch the status filter to Approved/Rejected/
-      Hold to check history — the filters are now always rendered, only the table body is
-      conditionally empty.
+19. Added `.nojekyll` to repo root so GitHub Pages serves the static mirror as plain files instead
+    of running it through Jekyll (which can stall/break the Pages build for a non-Jekyll site).
+    Infra-only, no app code changes.
+20. Fixed the Approver queue in `Admin.html`: the status/name/branch filter row (and the status
+    filter itself) used to be hidden entirely whenever zero rows matched across all
+    approver-relevant statuses combined, which trapped staff on an empty "For Approval" view with
+    no way to switch to `Approved`/`Rejected`/`Hold` to check history. `renderApproverQueue` now
+    always renders the filter chrome; only the table body is conditionally empty.
+21. Changed how the Cutoff Period is *displayed* (owner reported the raw `26-10`/`11-25` codes were
+    confusing). New `formatCutoffPeriodLabel_()` in `Code.gs` turns the stored code into an actual
+    month/day range for the request's own submission date, e.g. "Aug 11 - Aug 25" or
+    "Aug 26 - Sep 10" — exposed as a new `cutoffPeriodLabel` field alongside the existing raw
+    `cutoffPeriod` on every request object (`rowToRequestObject_`, `createRequest`'s return value).
+    The raw sheet column/value is untouched (still `26-10`/`11-25`, still the source of truth) —
+    only the UI-facing label changed, in `Employee.html` (chat review card, submission confirmation,
+    My Requests lookup, plus a client-side `computeCutoffPeriodPreview()` mirror matching the new
+    format) and `Admin.html` (all queue/history tables, CSV exports, and PDF exports across
+    Processor/Approver/Authorizer). Not yet deployed — see Pending deploy below.
 
 ## Open items / not yet done
 - **Login brute-force protection**: flagged to the owner, not yet implemented. `findUser_`/`login`
@@ -158,18 +167,17 @@ and iterating on real feedback.
 - No automated tests exist (Apps Script has no local test runner in this setup) — verification has
   been entirely manual, walking the chat flow end-to-end after each change. See the Verification
   section pattern in past plans for what to click through.
-- **Pending deploy**: everything through item 19 above (Approver-Hold/Authorizer-batch feature, the
-  follow-up UI polish, and the `.nojekyll`/empty-filter-row fixes) is committed and pushed to GitHub
-  as of commit `63905f2`, but had not yet been pasted into the Apps Script editor as of this session
-  (the `.nojekyll` fix only affects the GitHub Pages mirror and needs no Apps Script deploy; the
-  Approver-filter fix is `Admin.html`-only and still needs the same paste-and-redeploy as the rest).
-  `Code.gs` and `Admin.html` **must**
-  deploy together — they share the renamed `getApproverQueue`/`getForAuthorization`/`authorizeBatch`
-  function names and the `hr`→`authorizer` role rename; deploying only one half breaks the
-  Approver/Authorizer tabs entirely. (Item 18's changes are `Admin.html`-only, but since `Code.gs`
-  from item 17 still isn't live either, both files still need to go up together in one pass.) Two
-  extra one-time manual steps beyond the usual paste-and-redeploy, both required immediately after
-  deploying (see `CLAUDE.md`'s Deployment section for exact steps):
+- **Pending deploy**: everything through item 21 above (Approver-Hold/Authorizer-batch feature, the
+  follow-up UI polish, `.nojekyll`, the empty-queue filter-row fix, and the cutoff-period display
+  format) is committed and pushed to GitHub as of commit `587ec52`, but had not yet been pasted into
+  the Apps Script editor as of this session — confirm with the owner before assuming it's live.
+  `Code.gs` and `Admin.html` **must** deploy together — they share the renamed
+  `getApproverQueue`/`getForAuthorization`/`authorizeBatch` function names, the `hr`→`authorizer`
+  role rename, and now the new `cutoffPeriodLabel` field (`Admin.html`'s tables/exports read it, so
+  they'd show `undefined` against an un-updated `Code.gs`). (Items 18 and 20 are `Admin.html`-only,
+  but since `Code.gs` from item 17 still isn't live either, all files still need to go up together
+  in one pass.) Two extra one-time manual steps beyond the usual paste-and-redeploy, both required
+  immediately after deploying (see `CLAUDE.md`'s Deployment section for exact steps):
   1. **Roles sheet fix**: change every existing `hr` row to `authorizer` in the `Roles` tab, or that
      account gets locked out the instant the new code goes live.
   2. **Install the time-driven trigger**: Apps Script editor → Triggers → Add Trigger →

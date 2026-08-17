@@ -89,7 +89,14 @@ and its client-side checks are just UX, not security)
   name) — the transaction number for a per-batch export lives in the print subtitle instead of the
   title.
 - **Cutoff period**: auto-computed from today's day-of-month, never asked — 11th–25th ⇒ `11-25`,
-  else ⇒ `26-10` (`computeCutoffPeriod_`).
+  else ⇒ `26-10` (`computeCutoffPeriod_`); that raw code is what's stored in the sheet's
+  `Cutoff Period (auto)` column. Everywhere it's *displayed* (Employee.html chat, Admin.html
+  tables/CSV/PDF exports), it's shown instead as an actual month/day range, e.g. "Aug 11 - Aug 25"
+  or "Aug 26 - Sep 10" (`formatCutoffPeriodLabel_`, surfaced as `cutoffPeriodLabel` alongside the
+  raw `cutoffPeriod` on every request object). The label is computed from that specific request's
+  own `Timestamp`, not from today's date, since the same raw code repeats every month — Employee.html
+  has a client-side mirror (`computeCutoffPeriodPreview()`) for the pre-submission review card, same
+  as it already does for the crediting-date preview.
 - **Crediting date**: auto-computed as the next Friday on/after submission day, never asked
   (`computeCreditingDate_`) — never rolls into the past even if HR force-opens the window outside
   the normal schedule.

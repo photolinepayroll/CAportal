@@ -460,10 +460,24 @@
       { key: 'purpose', prompt: 'What\'s the reason/purpose for your CA request?', type: 'text', placeholder: 'Reason' }
     ];
 
-    // Mirrors computeCutoffPeriod_() in Code.gs — display-only preview before the server confirms it.
+    // Mirrors formatCutoffPeriodLabel_() in Code.gs — display-only preview before the server confirms it.
     function computeCutoffPeriodPreview() {
-      var dayOfMonth = new Date().getDate();
-      return (dayOfMonth >= 11 && dayOfMonth <= 25) ? '11-25' : '26-10';
+      var monthAbbr = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      var now = new Date();
+      var day = now.getDate();
+      var month = now.getMonth();
+      var startMonth, startDay, endMonth, endDay;
+      if (day >= 11 && day <= 25) {
+        startMonth = month; startDay = 11;
+        endMonth = month; endDay = 25;
+      } else if (day >= 26) {
+        startMonth = month; startDay = 26;
+        endMonth = (month + 1) % 12; endDay = 10;
+      } else {
+        startMonth = (month + 11) % 12; startDay = 26;
+        endMonth = month; endDay = 10;
+      }
+      return monthAbbr[startMonth] + ' ' + startDay + ' - ' + monthAbbr[endMonth] + ' ' + endDay;
     }
 
     // Mirrors computeCreditingDate_() in Code.gs — display-only preview before the server confirms it.
@@ -577,7 +591,7 @@
         if (result.success) {
           var html = '<div class="info-card"><div class="info-card-header success">✅ Submitted!</div><div class="info-card-body">'
             + infoRow('Reference ID', result.requestId)
-            + infoRow('Cutoff', result.cutoffPeriod)
+            + infoRow('Cutoff', result.cutoffPeriodLabel)
             + infoRow('Crediting Date', formatDate(result.creditingDate))
             + '<p class="info-card-note">Your request is now being processed. You can check on it anytime here in the chat.</p>'
             + '</div></div>';
@@ -624,7 +638,7 @@
         + infoRow('Name', r.name)
         + infoRow('Request ID', r.requestId)
         + infoRow('Amount', formatCurrency(r.amount))
-        + infoRow('Cutoff', r.cutoffPeriod)
+        + infoRow('Cutoff', r.cutoffPeriodLabel)
         + infoRow('Purpose', r.purpose)
         + '<div class="info-row"><span class="label">Status</span><span class="status-badge ' + badgeClass + '">' + r.status + '</span></div>'
         + extraLine

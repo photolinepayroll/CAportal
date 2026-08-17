@@ -365,6 +365,32 @@ function computeCutoffPeriod_() {
   return (dayOfMonth >= 11 && dayOfMonth <= 25) ? CUTOFF_PERIODS[1] : CUTOFF_PERIODS[0];
 }
 
+var MONTH_ABBR_ = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/**
+ * Human-readable month/day range for whichever cutoff period `refDate` falls in, e.g. "Aug 11 - Aug 25"
+ * or "Aug 26 - Sep 10" (Asia/Manila). `refDate` defaults to now; pass a request's own Timestamp to
+ * label a past request correctly even though the raw stored code ('26-10'/'11-25') repeats every month.
+ */
+function formatCutoffPeriodLabel_(refDate) {
+  var d = refDate ? new Date(refDate) : new Date();
+  var day = Number(Utilities.formatDate(d, 'Asia/Manila', 'd'));
+  var month = Number(Utilities.formatDate(d, 'Asia/Manila', 'M')) - 1; // 0-based
+
+  var startMonth, startDay, endMonth, endDay;
+  if (day >= 11 && day <= 25) {
+    startMonth = month; startDay = 11;
+    endMonth = month; endDay = 25;
+  } else if (day >= 26) {
+    startMonth = month; startDay = 26;
+    endMonth = (month + 1) % 12; endDay = 10;
+  } else {
+    startMonth = (month + 11) % 12; startDay = 26;
+    endMonth = month; endDay = 10;
+  }
+  return MONTH_ABBR_[startMonth] + ' ' + startDay + ' - ' + MONTH_ABBR_[endMonth] + ' ' + endDay;
+}
+
 /**
  * 11:00 AM on the Wednesday of the current calendar week (Asia/Manila) — always "the Wednesday
  * on/after today," same-day if today is already Wednesday. Recomputed fresh every call, not stored
@@ -505,6 +531,7 @@ function rowToRequestObject_(row, rowIndex) {
     purpose: row[COL.PURPOSE - 1],
     dateNeeded: row[COL.DATE_NEEDED - 1],
     cutoffPeriod: row[COL.CUTOFF_PERIOD - 1],
+    cutoffPeriodLabel: formatCutoffPeriodLabel_(row[COL.TIMESTAMP - 1]),
     daysPresent: row[COL.DAYS_PRESENT - 1],
     status: row[COL.STATUS - 1],
     processorRemarks: row[COL.PROCESSOR_REMARKS - 1],
@@ -608,7 +635,7 @@ function createRequest(data) {
 
     sheet.appendRow(row);
     cacheInvalidate_(CACHE_KEYS.REQUESTS);
-    return { success: true, requestId: requestId, creditingDate: creditingDate, cutoffPeriod: cutoffPeriod };
+    return { success: true, requestId: requestId, creditingDate: creditingDate, cutoffPeriod: cutoffPeriod, cutoffPeriodLabel: formatCutoffPeriodLabel_(row[COL.TIMESTAMP - 1]) };
   } finally {
     lock.releaseLock();
   }
