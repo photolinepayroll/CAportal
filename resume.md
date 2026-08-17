@@ -1,6 +1,6 @@
 # Resume Notes — CA Portal
 
-Last updated: 2026-08-07. Read `CLAUDE.md` first for how the system works; this file is about
+Last updated: 2026-08-17. Read `CLAUDE.md` first for how the system works; this file is about
 **where things stand** and **what's left to do**.
 
 ## Current state
@@ -134,6 +134,14 @@ and iterating on real feedback.
       (`.btn-spinner`/`.table-scroll.is-processing`), so a large batch doesn't feel like a dead click.
     - The "N selected" label next to Authorize Selected now also shows the peso total of just the
       selected rows (not the whole list), computed client-side from `authForRowsCache`.
+19. Added `.nojekyll` to repo root so GitHub Pages serves the static mirror as plain files instead
+    of running it through Jekyll (which can stall/break the Pages build for a non-Jekyll site).
+    Infra-only, no app code changes.
+20. Fixed the Approver queue in `Admin.html`: the status/name/branch filter row (and the status
+    filter itself) used to be hidden entirely whenever zero rows matched across all
+    approver-relevant statuses combined, which trapped staff on an empty "For Approval" view with
+    no way to switch to `Approved`/`Rejected`/`Hold` to check history. `renderApproverQueue` now
+    always renders the filter chrome; only the table body is conditionally empty.
 
 ## Open items / not yet done
 - **Login brute-force protection**: flagged to the owner, not yet implemented. `findUser_`/`login`
@@ -149,13 +157,14 @@ and iterating on real feedback.
 - No automated tests exist (Apps Script has no local test runner in this setup) — verification has
   been entirely manual, walking the chat flow end-to-end after each change. See the Verification
   section pattern in past plans for what to click through.
-- **Pending deploy**: everything through item 18 above (Approver-Hold/Authorizer-batch feature plus
-  the follow-up UI polish) is committed and pushed to GitHub as of commit `36164a3`, but had not yet
-  been pasted into the Apps Script editor as of this session. `Code.gs` and `Admin.html` **must**
+- **Pending deploy**: everything through item 20 above (Approver-Hold/Authorizer-batch feature, the
+  follow-up UI polish, `.nojekyll`, and the empty-queue filter-row fix) is committed and pushed to
+  GitHub as of commit `63905f2`, but had not yet been pasted into the Apps Script editor as of this
+  session — confirm with the owner before assuming it's live. `Code.gs` and `Admin.html` **must**
   deploy together — they share the renamed `getApproverQueue`/`getForAuthorization`/`authorizeBatch`
   function names and the `hr`→`authorizer` role rename; deploying only one half breaks the
-  Approver/Authorizer tabs entirely. (Item 18's changes are `Admin.html`-only, but since `Code.gs`
-  from item 17 still isn't live either, both files still need to go up together in one pass.) Two
+  Approver/Authorizer tabs entirely. (Items 18 and 20 are `Admin.html`-only, but since `Code.gs`
+  from item 17 still isn't live either, all files still need to go up together in one pass.) Two
   extra one-time manual steps beyond the usual paste-and-redeploy, both required immediately after
   deploying (see `CLAUDE.md`'s Deployment section for exact steps):
   1. **Roles sheet fix**: change every existing `hr` row to `authorizer` in the `Roles` tab, or that
