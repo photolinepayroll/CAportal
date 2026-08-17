@@ -627,7 +627,7 @@
           '<td>' + r.name + '</td>' +
           '<td>' + r.branch + '</td>' +
           '<td class="num">' + formatCurrency(r.amount) + '</td>' +
-          '<td>' + r.cutoffPeriod + '</td>' +
+          '<td>' + r.cutoffPeriodLabel + '</td>' +
           '<td class="num">' + r.daysPresent + '</td>' +
           '<td>' + r.purpose + '</td>' +
           '<td>' +
@@ -854,7 +854,7 @@
           '<td>' + r.name + '</td>' +
           '<td>' + r.branch + '</td>' +
           '<td class="num">' + formatCurrency(r.amount) + '</td>' +
-          '<td>' + r.cutoffPeriod + '</td>' +
+          '<td>' + r.cutoffPeriodLabel + '</td>' +
           '<td class="num">' + r.daysPresent + '</td>' +
           '<td>' + (r.processorRemarks || '—') + '</td>';
         if (actionable) {
@@ -1074,7 +1074,7 @@
           '<td>' + r.name + '</td>' +
           '<td>' + r.branch + '</td>' +
           '<td class="num">' + formatCurrency(r.amount) + '</td>' +
-          '<td>' + r.cutoffPeriod + '</td>' +
+          '<td>' + r.cutoffPeriodLabel + '</td>' +
           '<td>' + r.atdCompliance + '</td>' +
           '<td>' + formatDate(r.dateApproved) + '</td>' +
           '</tr>';
@@ -1160,7 +1160,7 @@
       var headers = ['Request ID', 'Name', 'Branch', 'Amount', 'Cutoff Period', 'Working Days', 'ATD Compliance', 'Date Approved', 'Purpose'];
       var lines = [headers.join(',')];
       authForRowsCache.forEach(function (r) {
-        lines.push([r.requestId, r.name, r.branch, r.amount, r.cutoffPeriod, r.daysPresent, r.atdCompliance, formatDate(r.dateApproved), r.purpose].map(toCsvValue).join(','));
+        lines.push([r.requestId, r.name, r.branch, r.amount, r.cutoffPeriodLabel, r.daysPresent, r.atdCompliance, formatDate(r.dateApproved), r.purpose].map(toCsvValue).join(','));
       });
       var blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
       var url = URL.createObjectURL(blob);
@@ -1197,7 +1197,7 @@
           '<td>' + r.name + '</td>' +
           '<td>' + r.branch + '</td>' +
           '<td class="num">' + formatCurrency(r.amount) + '</td>' +
-          '<td>' + r.cutoffPeriod + '</td>' +
+          '<td>' + r.cutoffPeriodLabel + '</td>' +
           '<td>' + r.atdCompliance + '</td>' +
           '<td>' + formatDate(r.dateApproved) + '</td>' +
           '</tr>';
@@ -1294,7 +1294,7 @@
           '<td>' + r.name + '</td>' +
           '<td>' + r.branch + '</td>' +
           '<td class="num">' + formatCurrency(r.amount) + '</td>' +
-          '<td>' + r.cutoffPeriod + '</td>' +
+          '<td>' + r.cutoffPeriodLabel + '</td>' +
           '<td>' + r.atdCompliance + '</td>' +
           '<td>' + formatDate(r.dateApproved) + '</td>' +
           '</tr>';
@@ -1312,7 +1312,7 @@
       var headers = ['Request ID', 'Name', 'Branch', 'Amount', 'Cutoff Period', 'ATD Compliance', 'Date Approved'];
       var lines = [headers.join(',')];
       batch.requests.forEach(function (r) {
-        lines.push([r.requestId, r.name, r.branch, r.amount, r.cutoffPeriod, r.atdCompliance, formatDate(r.dateApproved)].map(toCsvValue).join(','));
+        lines.push([r.requestId, r.name, r.branch, r.amount, r.cutoffPeriodLabel, r.atdCompliance, formatDate(r.dateApproved)].map(toCsvValue).join(','));
       });
       var blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
       var url = URL.createObjectURL(blob);
@@ -1339,7 +1339,7 @@
           '<td>' + r.name + '</td>' +
           '<td>' + r.branch + '</td>' +
           '<td class="num">' + formatCurrency(r.amount) + '</td>' +
-          '<td>' + r.cutoffPeriod + '</td>' +
+          '<td>' + r.cutoffPeriodLabel + '</td>' +
           '<td>' + r.atdCompliance + '</td>' +
           '<td>' + formatDate(r.dateApproved) + '</td>' +
           '</tr>';
