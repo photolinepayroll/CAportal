@@ -372,6 +372,8 @@
       }
 
       var ATTEMPT_TIMEOUT_MS = 45000; // bounds one round trip so a stuck/slow call fails fast instead of hanging for minutes
+      var MAX_ATTEMPTS = 3; // absorbs transient hiccups (bad HTML response, timeout, dropped connection) without bothering the user
+      var RETRY_DELAY_MS = 1200;
 
       function attempt() {
         var controller = new AbortController();
@@ -399,24 +401,36 @@
           .finally(function () { clearTimeout(timer); });
       }
 
-      function friendlyTimeout(err) {
+      // A raw fetch() network failure (offline, DNS, connection reset/refused, blocked by an
+      // extension) rejects with a TypeError, distinct from errors we throw ourselves above.
+      function isRetryable(err) {
+        return err instanceof TypeError || (err && (err.name === 'AbortError' || err.message === 'NON_JSON_RESPONSE'));
+      }
+
+      function toFriendlyError(err) {
+        if (err instanceof TypeError) {
+          return new Error('Could not connect to the server. Please check your internet connection and try again.');
+        }
         if (err && err.name === 'AbortError') {
           return new Error('The server is taking too long to respond. Please try again in a moment.');
+        }
+        if (err && err.message === 'NON_JSON_RESPONSE') {
+          return new Error('Lost connection to the server. Please check your internet connection and try again.');
         }
         return err;
       }
 
-      return attempt().catch(function (err) {
-        if (err && err.message === 'NON_JSON_RESPONSE') {
-          return attempt().catch(function (err2) {
-            if (err2 && err2.message === 'NON_JSON_RESPONSE') {
-              throw new Error('Lost connection to the server. Please check your internet connection and try again.');
-            }
-            throw friendlyTimeout(err2);
-          });
-        }
-        throw friendlyTimeout(err);
-      });
+      function runWithRetry(attemptsLeft) {
+        return attempt().catch(function (err) {
+          if (attemptsLeft > 1 && isRetryable(err)) {
+            return new Promise(function (resolve) { setTimeout(resolve, RETRY_DELAY_MS); })
+              .then(function () { return runWithRetry(attemptsLeft - 1); });
+          }
+          throw toFriendlyError(err);
+        });
+      }
+
+      return runWithRetry(MAX_ATTEMPTS);
     }
 
     var toastTimer;
