@@ -417,9 +417,12 @@
 
     /** Shared toast summary for processorReviewBatch/approverReviewBatch results. verbPast: 'forwarded' | 'approved' | 'rejected'. */
     function reportBatchResult(result, verbPast) {
-      var okCount = result.succeeded.length;
-      var failCount = result.failed.length;
-      if (failCount) console.warn('Batch failures:', result.failed);
+      // google.script.run (direct Apps Script /exec link) delivers an empty array as null, not [].
+      var succeeded = result.succeeded || [];
+      var failed = result.failed || [];
+      var okCount = succeeded.length;
+      var failCount = failed.length;
+      if (failCount) console.warn('Batch failures:', failed);
       if (failCount === 0) {
         toast(okCount + (okCount === 1 ? ' request ' : ' requests ') + verbPast + '.', 'success');
         return;
@@ -570,6 +573,8 @@
       var container = document.getElementById('proc-results');
       container.innerHTML = '<p class="empty-state">Loading…</p>';
       gs('getPendingForProcessor', session.username, session.password).then(function (rows) {
+        // google.script.run (direct Apps Script /exec link) delivers an empty array as null, not [].
+        rows = rows || [];
         procRowsCache = rows;
         procSelectedIds.clear();
         renderProcessorQueue(rows, session);
@@ -775,6 +780,8 @@
       var container = document.getElementById('appr-results');
       container.innerHTML = '<p class="empty-state">Loading…</p>';
       gs('getApproverQueue', session.username, session.password).then(function (rows) {
+        // google.script.run (direct Apps Script /exec link) delivers an empty array as null, not [].
+        rows = rows || [];
         apprRowsCache = rows;
         apprSelectedIds.clear();
         renderApproverQueue(rows, session);
@@ -1067,6 +1074,8 @@
       var container = document.getElementById('auth-for-results');
       container.innerHTML = '<p class="empty-state">Loading…</p>';
       gs('getForAuthorization', session.username, session.password).then(function (rows) {
+        // google.script.run (direct Apps Script /exec link) delivers an empty array as null, not [].
+        rows = rows || [];
         authForRowsCache = rows;
         authSelectedIds.clear();
         renderForAuthorization(rows, session);
@@ -1258,6 +1267,8 @@
       var container = document.getElementById('auth-history-results');
       container.innerHTML = '<p class="empty-state">Loading…</p>';
       gs('getTransactionHistory', session.username, session.password).then(function (batches) {
+        // google.script.run (direct Apps Script /exec link) delivers an empty array as null, not [].
+        batches = batches || [];
         authHistoryCache = batches;
         renderTransactionHistory(batches);
       }).catch(function (err) {

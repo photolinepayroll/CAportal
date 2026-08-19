@@ -348,8 +348,9 @@
     function loadBranchList() {
       if (branchListCache) return Promise.resolve(branchListCache);
       return gs('getBranchList').then(function (list) {
-        branchListCache = list;
-        return list;
+        // google.script.run delivers an empty array result as null rather than [] — normalize here.
+        branchListCache = list || [];
+        return branchListCache;
       });
     }
 
@@ -673,6 +674,9 @@
       showTyping();
       gs('getRequestByLastNameAndId', lastName, requestId).then(function (rows) {
         hideTyping();
+        // google.script.run (the direct Apps Script /exec link) delivers an empty array result as
+        // null rather than [] — normalize here so a "no matches" result doesn't crash on rows.length.
+        rows = rows || [];
         if (!rows.length) {
           addBotBubble('No request found matching the Last Name and Request Number you provided. Please make sure both details are correct.');
           renderQuickReplies([
