@@ -371,11 +371,16 @@
         return Promise.reject(new Error('Set LOCAL_WEB_APP_URL at the top of this file to your deployed /exec URL first.'));
       }
 
+      var ATTEMPT_TIMEOUT_MS = 45000; // bounds one round trip so a stuck/slow call fails fast instead of hanging for minutes
+
       function attempt() {
+        var controller = new AbortController();
+        var timer = setTimeout(function () { controller.abort(); }, ATTEMPT_TIMEOUT_MS);
         return fetch(url, {
           method: 'POST',
           headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // avoids a CORS preflight Apps Script can't answer
-          body: JSON.stringify({ fn: fnName, args: args })
+          body: JSON.stringify({ fn: fnName, args: args }),
+          signal: controller.signal
         })
           .then(function (res) { return res.text(); })
           .then(function (text) {
@@ -390,7 +395,15 @@
             }
             if (payload.success) return payload.result;
             throw new Error(payload.error || 'Request failed');
-          });
+          })
+          .finally(function () { clearTimeout(timer); });
+      }
+
+      function friendlyTimeout(err) {
+        if (err && err.name === 'AbortError') {
+          return new Error('The server is taking too long to respond. Please try again in a moment.');
+        }
+        return err;
       }
 
       return attempt().catch(function (err) {
@@ -399,10 +412,10 @@
             if (err2 && err2.message === 'NON_JSON_RESPONSE') {
               throw new Error('Lost connection to the server. Please check your internet connection and try again.');
             }
-            throw err2;
+            throw friendlyTimeout(err2);
           });
         }
-        throw err;
+        throw friendlyTimeout(err);
       });
     }
 

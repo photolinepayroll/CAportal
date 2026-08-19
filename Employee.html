@@ -56,6 +56,7 @@
   .typing-dot:nth-child(2) { animation-delay: 0.2s; }
   .typing-dot:nth-child(3) { animation-delay: 0.4s; }
   @keyframes bounce { 0%, 60%, 100% { transform: translateY(0); opacity: 0.5; } 30% { transform: translateY(-4px); opacity: 1; } }
+  .typing-slow-note { font-size: 11px; color: #999; margin-top: 6px; }
 
   .quick-replies { display: flex; flex-wrap: wrap; gap: 8px; padding: 4px 0 2px; }
   .quick-reply-btn {
@@ -150,11 +151,16 @@
         return Promise.reject(new Error('Set LOCAL_WEB_APP_URL at the top of this file to your deployed /exec URL first.'));
       }
 
+      var ATTEMPT_TIMEOUT_MS = 45000; // bounds one round trip so a stuck/slow call fails fast instead of hanging for minutes
+
       function attempt() {
+        var controller = new AbortController();
+        var timer = setTimeout(function () { controller.abort(); }, ATTEMPT_TIMEOUT_MS);
         return fetch(url, {
           method: 'POST',
           headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // avoids a CORS preflight Apps Script can't answer
-          body: JSON.stringify({ fn: fnName, args: args })
+          body: JSON.stringify({ fn: fnName, args: args }),
+          signal: controller.signal
         })
           .then(function (res) { return res.text(); })
           .then(function (text) {
@@ -169,7 +175,15 @@
             }
             if (payload.success) return payload.result;
             throw new Error(payload.error || 'Request failed');
-          });
+          })
+          .finally(function () { clearTimeout(timer); });
+      }
+
+      function friendlyTimeout(err) {
+        if (err && err.name === 'AbortError') {
+          return new Error('The server is taking too long to respond. Please try again in a moment.');
+        }
+        return err;
       }
 
       return attempt().catch(function (err) {
@@ -178,10 +192,10 @@
             if (err2 && err2.message === 'NON_JSON_RESPONSE') {
               throw new Error('Lost connection to the server. Please check your internet connection and try again.');
             }
-            throw err2;
+            throw friendlyTimeout(err2);
           });
         }
-        throw err;
+        throw friendlyTimeout(err);
       });
     }
 
@@ -244,6 +258,8 @@
       scrollToBottom();
     }
 
+    var typingSlowTimer = null;
+
     function showTyping() {
       var row = document.createElement('div');
       row.className = 'msg-row bot';
@@ -254,9 +270,22 @@
       row.appendChild(ind);
       messagesEl.appendChild(row);
       scrollToBottom();
+
+      // If a backend call is taking a while, let the user know it's still working instead of
+      // leaving the dots looking frozen.
+      clearTimeout(typingSlowTimer);
+      typingSlowTimer = setTimeout(function () {
+        if (!document.getElementById('typingRow')) return;
+        var note = document.createElement('div');
+        note.className = 'typing-slow-note';
+        note.textContent = 'Medyo matagal ang koneksyon, sandali lang po…';
+        row.appendChild(note);
+        scrollToBottom();
+      }, 6000);
     }
 
     function hideTyping() {
+      clearTimeout(typingSlowTimer);
       var el = document.getElementById('typingRow');
       if (el) el.remove();
     }
