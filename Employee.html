@@ -149,16 +149,40 @@
       if (!url || url.indexOf('PASTE_YOUR_DEPLOYED_EXEC_URL_HERE') !== -1) {
         return Promise.reject(new Error('Set LOCAL_WEB_APP_URL at the top of this file to your deployed /exec URL first.'));
       }
-      return fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // avoids a CORS preflight Apps Script can't answer
-        body: JSON.stringify({ fn: fnName, args: args })
-      })
-        .then(function (res) { return res.json(); })
-        .then(function (payload) {
-          if (payload.success) return payload.result;
-          throw new Error(payload.error || 'Request failed');
-        });
+
+      function attempt() {
+        return fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // avoids a CORS preflight Apps Script can't answer
+          body: JSON.stringify({ fn: fnName, args: args })
+        })
+          .then(function (res) { return res.text(); })
+          .then(function (text) {
+            var payload;
+            try {
+              payload = JSON.parse(text);
+            } catch (parseErr) {
+              // Apps Script occasionally answers with an HTML interstitial (idle instance, auth
+              // hiccup) instead of running doPost — not valid JSON. Signal that distinctly so the
+              // caller can retry instead of surfacing a raw parse error.
+              throw new Error('NON_JSON_RESPONSE');
+            }
+            if (payload.success) return payload.result;
+            throw new Error(payload.error || 'Request failed');
+          });
+      }
+
+      return attempt().catch(function (err) {
+        if (err && err.message === 'NON_JSON_RESPONSE') {
+          return attempt().catch(function (err2) {
+            if (err2 && err2.message === 'NON_JSON_RESPONSE') {
+              throw new Error('Lost connection to the server. Please check your internet connection and try again.');
+            }
+            throw err2;
+          });
+        }
+        throw err;
+      });
     }
 
     function formatCurrency(amount) {
