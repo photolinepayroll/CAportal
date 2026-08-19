@@ -401,10 +401,23 @@
           .finally(function () { clearTimeout(timer); });
       }
 
+      // Functions that write to the Sheet. A network failure or timeout on one of these is
+      // ambiguous — the write may already have gone through server-side even though the
+      // response never reached us — so auto-retrying on those failure modes risks creating a
+      // duplicate forward/approval/disbursement. Only the pre-execution HTML-interstitial case
+      // (NON_JSON_RESPONSE, which means Apps Script never even ran doPost) is safe to retry for
+      // these; anything else surfaces once so a human decides whether to try again.
+      var WRITE_FUNCTIONS = {
+        processorReview: true, approverReview: true, processorReviewBatch: true,
+        approverReviewBatch: true, authorizeBatch: true, setCaWindowOverride: true
+      };
+
       // A raw fetch() network failure (offline, DNS, connection reset/refused, blocked by an
       // extension) rejects with a TypeError, distinct from errors we throw ourselves above.
       function isRetryable(err) {
-        return err instanceof TypeError || (err && (err.name === 'AbortError' || err.message === 'NON_JSON_RESPONSE'));
+        if (err && err.message === 'NON_JSON_RESPONSE') return true;
+        if (WRITE_FUNCTIONS[fnName]) return false;
+        return err instanceof TypeError || (err && err.name === 'AbortError');
       }
 
       function toFriendlyError(err) {
