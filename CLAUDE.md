@@ -137,6 +137,17 @@ end of that bridge. This means you can iterate on the HTML/CSS/JS locally agains
 Sheet** without touching the Apps Script editor for every tweak; you only need to paste-and-deploy
 when `Code.gs` itself changes.
 
+`gs()` is also the resilience layer for the deployed fetch bridge (GitHub Pages hitting the live
+`/exec` URL), since that path is exposed to real network conditions the `google.script.run` path
+isn't: each attempt is capped at 45s via `AbortController`, an HTML-interstitial or raw network
+failure gets one retry, and read-only calls get up to 3 attempts total — but write functions
+(`createRequest`, `processorReview`, `approverReview`, both batch variants, `authorizeBatch`,
+`setCaWindowOverride`) only auto-retry the provably-safe HTML-interstitial case, since a genuine
+network failure is ambiguous about whether the write already landed server-side and blind retrying
+there risks a duplicate request/review/disbursement. `google.script.run` results also get a
+null-to-`[]` guard, since it silently delivers an empty array as `null` where the fetch bridge
+would give an actual `[]`.
+
 ## Deployment
 No `clasp` set up — deploy by pasting file contents into the Apps Script editor (bound to the
 Sheet via Extensions → Apps Script) and creating a **New version** under Manage deployments.

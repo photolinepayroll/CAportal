@@ -1,6 +1,6 @@
 # Resume Notes — CA Portal
 
-Last updated: 2026-08-17. Read `CLAUDE.md` first for how the system works; this file is about
+Last updated: 2026-08-20. Read `CLAUDE.md` first for how the system works; this file is about
 **where things stand** and **what's left to do**.
 
 ## Current state
@@ -152,6 +152,25 @@ and iterating on real feedback.
     My Requests lookup, plus a client-side `computeCutoffPeriodPreview()` mirror matching the new
     format) and `Admin.html` (all queue/history tables, CSV exports, and PDF exports across
     Processor/Approver/Authorizer). Not yet deployed — see Pending deploy below.
+22. Hardened the `gs()` fetch bridge (`Employee.html`/`Admin.html`, used when opened locally or on
+    GitHub Pages instead of via `google.script.run`) against several real-world failure modes hit
+    during live/GitHub Pages testing — five commits, frontend-only, no `Code.gs` changes:
+    - Retry once on an HTML-interstitial response (idle Apps Script instance / transient auth
+      hiccup returning HTML instead of JSON) instead of surfacing a raw "Unexpected token '<'" error.
+    - Guarded six call sites against `google.script.run`'s quirk of delivering an empty array as
+      `null` (only affects the direct `/exec` link, not the fetch bridge) — was crashing empty-state
+      cases (no matching status lookup, empty queues) with a `.length`-of-null error.
+    - Bounded each `gs()` attempt with a 45s `AbortController` timeout so a slow/stuck Apps Script
+      response fails fast with a clear message instead of hanging for minutes; `Employee.html`'s
+      typing indicator also shows a "still working" note past 6s so a slow reply doesn't look frozen.
+    - Generalized the retry to cover raw network failures (`Failed to fetch`), not just bad-HTML
+      responses, since these are expected to become more common as concurrent usage grows.
+    - Restricted auto-retry to read-only calls only: for write functions (`createRequest`,
+      `processorReview`, `approverReview`, both batch variants, `authorizeBatch`,
+      `setCaWindowOverride`) a network failure/timeout is ambiguous about whether the write already
+      landed server-side, so auto-retrying risked a duplicate request/review/disbursement — writes
+      still retry only the provably-safe HTML-interstitial case, and surface once otherwise. Not yet
+      deployed — see Pending deploy below.
 
 ## Open items / not yet done
 - **Login brute-force protection**: flagged to the owner, not yet implemented. `findUser_`/`login`
@@ -167,10 +186,12 @@ and iterating on real feedback.
 - No automated tests exist (Apps Script has no local test runner in this setup) — verification has
   been entirely manual, walking the chat flow end-to-end after each change. See the Verification
   section pattern in past plans for what to click through.
-- **Pending deploy**: everything through item 21 above (Approver-Hold/Authorizer-batch feature, the
-  follow-up UI polish, `.nojekyll`, the empty-queue filter-row fix, and the cutoff-period display
-  format) is committed and pushed to GitHub as of commit `587ec52`, but had not yet been pasted into
-  the Apps Script editor as of this session — confirm with the owner before assuming it's live.
+- **Pending deploy**: everything through item 22 above (Approver-Hold/Authorizer-batch feature, the
+  follow-up UI polish, `.nojekyll`, the empty-queue filter-row fix, the cutoff-period display
+  format, and the `gs()` bridge hardening) is committed and pushed to GitHub as of commit `56e5e2e`,
+  but had not yet been pasted into the Apps Script editor as of this session — confirm with the
+  owner before assuming it's live. Item 22 is frontend-only (`Employee.html`/`Admin.html`), so it
+  doesn't add new deploy-together constraints beyond the ones below.
   `Code.gs` and `Admin.html` **must** deploy together — they share the renamed
   `getApproverQueue`/`getForAuthorization`/`authorizeBatch` function names, the `hr`→`authorizer`
   role rename, and now the new `cutoffPeriodLabel` field (`Admin.html`'s tables/exports read it, so
