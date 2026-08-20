@@ -219,6 +219,8 @@
   .print-table th { text-align: left; padding: 6px 8px; border-bottom: 2px solid var(--ink); font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; }
   .print-table td { padding: 8px; border-bottom: 1px solid var(--paper-line); }
   .print-table .num { font-family: var(--font-mono); }
+  .print-table td.remarks-cell { min-width: 90px; height: 32px; }
+  .print-table td.remarks-cell::after { content: ''; display: block; border-bottom: 1px solid var(--ink); margin-top: 18px; }
 
   .print-total { margin-top: 14px; font-family: var(--font-mono); font-size: 13px; }
 
@@ -237,6 +239,7 @@
     }
     @page { margin: 16mm; }
     .print-table th { border-bottom-color: #000; }
+    .print-table td.remarks-cell::after { border-bottom-color: #000; }
     .signatory-line { border-top-color: #000; }
   }
   </style>
@@ -607,6 +610,7 @@
     viewLoaders.processor = function (session) { loadProcessorQueue(session); };
 
     var procRowsCache = [];
+    var procVisibleRows = [];
     var procSelectedIds = new Set();
 
     function loadProcessorQueue(session) {
@@ -642,6 +646,12 @@
             '<select id="proc-branch-filter">' + buildBranchFilterOptions_(rows) + '</select>' +
           '</div>' +
         '</div>' +
+        '<div class="toolbar-row">' +
+          '<div class="row-actions">' +
+            '<button class="btn btn-outline" id="proc-export-csv" type="button">Export CSV</button>' +
+            '<button class="btn btn-outline" id="proc-export-pdf" type="button">Export PDF</button>' +
+          '</div>' +
+        '</div>' +
         '<div class="btn-row tight" id="proc-bulk-toolbar" style="display:none;">' +
           '<span id="proc-bulk-count"></span>' +
           '<button class="btn btn-approve" id="proc-bulk-forward">Forward Selected</button>' +
@@ -662,6 +672,12 @@
       document.getElementById('proc-branch-filter').addEventListener('change', function () {
         applyProcessorFilter(session);
       });
+      document.getElementById('proc-export-csv').addEventListener('click', function () {
+        exportProcessorCsv_();
+      });
+      document.getElementById('proc-export-pdf').addEventListener('click', function () {
+        exportProcessorPdf_();
+      });
       wireProcessorBulkToolbar(session);
       renderProcessorTable(rows, session);
     }
@@ -679,6 +695,7 @@
 
     function renderProcessorTable(rows, session) {
       var area = document.getElementById('proc-table-area');
+      procVisibleRows = rows;
       if (!rows.length) {
         area.innerHTML = '<p class="empty-state">No requests match that name.</p>';
         updateProcessorBulkToolbar();
@@ -1246,6 +1263,24 @@
       URL.revokeObjectURL(url);
     });
 
+    function exportProcessorCsv_() {
+      if (!procVisibleRows.length) { toast('Nothing to export.', 'error'); return; }
+      var headers = ['Request ID', 'Name', 'Branch', 'Amount', 'Cutoff Period', 'Working Days', 'Purpose', 'Remarks'];
+      var lines = [headers.join(',')];
+      procVisibleRows.forEach(function (r) {
+        lines.push([r.requestId, r.name, r.branch, r.amount, r.cutoffPeriodLabel, r.daysPresent, r.purpose, ''].map(toCsvValue).join(','));
+      });
+      var blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = 'ca-processor-queue-' + new Date().toISOString().slice(0, 10) + '.csv';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+
     function buildSignatoryBlock_(label, prefilledName) {
       return '<div class="signatory">' +
         '<div class="signatory-line">' + (prefilledName || '&nbsp;') + '</div>' +
@@ -1291,6 +1326,42 @@
       document.getElementById('pdf-print-area').innerHTML = buildForAuthorizationPrintHtml_(authForRowsCache);
       window.print();
     });
+
+    function buildProcessorPrintHtml_(rows) {
+      var html = '<div class="print-header">' +
+        '<p class="print-title">Cash Advance — Processor Review List</p>' +
+        '<p class="print-meta">Generated ' + formatDate(new Date()) + ' &middot; ' + rows.length + ' pending request(s)</p>' +
+        '</div>';
+
+      html += '<table class="print-table"><thead><tr>' +
+        '<th>Request ID</th><th>Name</th><th>Branch</th><th>Amount</th><th>Cutoff</th><th>Working Days</th><th>Purpose</th><th>Remarks</th>' +
+        '</tr></thead><tbody>';
+      rows.forEach(function (r) {
+        html += '<tr>' +
+          '<td>' + r.requestId + '</td>' +
+          '<td>' + r.name + '</td>' +
+          '<td>' + r.branch + '</td>' +
+          '<td class="num">' + formatCurrency(r.amount) + '</td>' +
+          '<td>' + r.cutoffPeriodLabel + '</td>' +
+          '<td class="num">' + r.daysPresent + '</td>' +
+          '<td>' + r.purpose + '</td>' +
+          '<td class="remarks-cell">&nbsp;</td>' +
+          '</tr>';
+      });
+      html += '</tbody></table>';
+
+      html += '<div class="print-signatories">' +
+        buildSignatoryBlock_('Prepared by', '') +
+        buildSignatoryBlock_('Checked by', '') +
+        '</div>';
+      return html;
+    }
+
+    function exportProcessorPdf_() {
+      if (!procVisibleRows.length) { toast('Nothing to export.', 'error'); return; }
+      document.getElementById('pdf-print-area').innerHTML = buildProcessorPrintHtml_(procVisibleRows);
+      window.print();
+    }
 
     document.getElementById('auth-for-refresh').addEventListener('click', function () {
       var session = getSession();

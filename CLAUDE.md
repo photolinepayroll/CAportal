@@ -88,6 +88,12 @@ and its client-side checks are just UX, not security)
   "Cash Advance Disbursement", and leave all three signatory lines blank (no auto-filled preparer
   name) — the transaction number for a per-batch export lives in the print subtitle instead of the
   title.
+- **Processor Export CSV/PDF**: unlike the Authorizer export (a post-authorization audit record),
+  the Processor Queue's Export CSV/PDF is a pre-decision review sheet — every row carries an
+  intentionally blank "Remarks" column (both formats) for a processor to hand-annotate while
+  reviewing away from the screen, and the PDF footer has two blank signatory lines, "Prepared by" /
+  "Checked by" (vs. the Authorizer PDF's three). Both exports respect the tab's current name/branch
+  filter, not the full unfiltered queue.
 - **Cutoff period**: auto-computed from today's day-of-month, never asked — 11th–25th ⇒ `11-25`,
   else ⇒ `26-10` (`computeCutoffPeriod_`); that raw code is what's stored in the sheet's
   `Cutoff Period (auto)` column. Everywhere it's *displayed* (Employee.html chat, Admin.html

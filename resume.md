@@ -1,6 +1,6 @@
 # Resume Notes — CA Portal
 
-Last updated: 2026-08-20. Read `CLAUDE.md` first for how the system works; this file is about
+Last updated: 2026-08-20 (Processor Export feature added). Read `CLAUDE.md` first for how the system works; this file is about
 **where things stand** and **what's left to do**.
 
 ## Current state
@@ -171,6 +171,18 @@ and iterating on real feedback.
       landed server-side, so auto-retrying risked a duplicate request/review/disbursement — writes
       still retry only the provably-safe HTML-interstitial case, and surface once otherwise. Not yet
       deployed — see Pending deploy below.
+23. Added Export CSV / Export PDF to the Processor Queue tab (`Admin.html`, frontend-only, no
+    `Code.gs` changes) — the only staff tab that had neither before this. Purpose is a printable
+    pre-decision review sheet, not an audit record, so it's shaped differently from the existing
+    Authorizer export: every row (CSV and PDF alike) carries an intentionally blank **Remarks**
+    column for a processor to hand-annotate while reviewing away from the screen, and the PDF footer
+    has two blank signatory lines, "Prepared by" / "Checked by" (vs. the Authorizer PDF's three),
+    reusing the existing `buildSignatoryBlock_` helper. Both exports respect whatever the
+    name/branch filter row currently has visible (tracked in a new `procVisibleRows` var, set at the
+    top of `renderProcessorTable`), not the full unfiltered queue — mirrors the Authorizer export's
+    `authForRowsCache` pattern but filter-aware. New `exportProcessorCsv_`/`exportProcessorPdf_`/
+    `buildProcessorPrintHtml_` functions reuse the shared `toCsvValue`/`buildSignatoryBlock_`/
+    `#pdf-print-area` plumbing — no new CSS. Not yet deployed — see Pending deploy below.
 
 ## Open items / not yet done
 - **Login brute-force protection**: flagged to the owner, not yet implemented. `findUser_`/`login`
@@ -186,12 +198,12 @@ and iterating on real feedback.
 - No automated tests exist (Apps Script has no local test runner in this setup) — verification has
   been entirely manual, walking the chat flow end-to-end after each change. See the Verification
   section pattern in past plans for what to click through.
-- **Pending deploy**: everything through item 22 above (Approver-Hold/Authorizer-batch feature, the
+- **Pending deploy**: everything through item 23 above (Approver-Hold/Authorizer-batch feature, the
   follow-up UI polish, `.nojekyll`, the empty-queue filter-row fix, the cutoff-period display
-  format, and the `gs()` bridge hardening) is committed and pushed to GitHub as of commit `56e5e2e`,
-  but had not yet been pasted into the Apps Script editor as of this session — confirm with the
-  owner before assuming it's live. Item 22 is frontend-only (`Employee.html`/`Admin.html`), so it
-  doesn't add new deploy-together constraints beyond the ones below.
+  format, the `gs()` bridge hardening, and the Processor Export CSV/PDF) is committed and pushed to
+  GitHub, but had not yet been pasted into the Apps Script editor as of this session — confirm with
+  the owner before assuming it's live. Items 22–23 are frontend-only (`Employee.html`/`Admin.html`),
+  so they don't add new deploy-together constraints beyond the ones below.
   `Code.gs` and `Admin.html` **must** deploy together — they share the renamed
   `getApproverQueue`/`getForAuthorization`/`authorizeBatch` function names, the `hr`→`authorizer`
   role rename, and now the new `cutoffPeriodLabel` field (`Admin.html`'s tables/exports read it, so
