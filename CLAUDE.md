@@ -68,6 +68,13 @@ and its client-side checks are just UX, not security)
 - **CA window**: normally open Monday–Wednesday only (`isCaWindowOpen_`, Asia/Manila). The
   Authorizer can force it open or closed from `Admin.html`'s Authorizer view regardless of day, for
   emergencies.
+- **One successful CA per cutoff period**: an employee cannot submit a new CA request if they
+  already have an `Approved` or `Disbursed` request whose `cutoffPeriod` matches the current cutoff
+  period (`validateNewRequest_`, checked against `computeCutoffPeriod_()`). A `Rejected` request
+  does not count against this — it frees the employee to try again within the same cutoff period.
+  This is separate from (and in addition to) the open-request check below; both can block a
+  submission independently. Cutoff periods are 26th (previous month) – 10th (current month) and
+  11th–25th (current month) — see Cutoff period below.
 - **Approver Hold + auto-reject deadline**: the Approver can place a Processing request on `Hold`
   instead of deciding immediately (`approverReview`'s `'hold'` action) — a Held request can still be
   approved or rejected at any time. But any request still on Hold after **11:00 AM on the Wednesday

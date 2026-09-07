@@ -183,6 +183,15 @@ and iterating on real feedback.
     `authForRowsCache` pattern but filter-aware. New `exportProcessorCsv_`/`exportProcessorPdf_`/
     `buildProcessorPrintHtml_` functions reuse the shared `toCsvValue`/`buildSignatoryBlock_`/
     `#pdf-print-area` plumbing — no new CSS. Not yet deployed — see Pending deploy below.
+24. Added a "one successful CA per cutoff period" rule to `validateNewRequest_` (`Code.gs`) —
+    previously an employee was only blocked while they had an *open* request (Pending/Processing/
+    Hold); now they're also blocked if they already have an `Approved` or `Disbursed` request whose
+    `cutoffPeriod` matches `computeCutoffPeriod_()`'s result for today. A `Rejected` request doesn't
+    count, so a rejected employee can still retry within the same cutoff period. Self-refreshing by
+    design: the check re-derives "current cutoff period" from today's date on every call, so once the
+    calendar rolls into the next cutoff period (26-10 ↔ 11-25) the old request's period code no
+    longer matches and the employee can submit again — no separate reset logic needed. Backend-only
+    change (`Code.gs`), needs the usual paste-and-redeploy — see Pending deploy below.
 
 ## Open items / not yet done
 - **Login brute-force protection**: flagged to the owner, not yet implemented. `findUser_`/`login`

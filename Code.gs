@@ -507,13 +507,29 @@ function validateNewRequest_(data) {
   if (data.lastName && data.firstName) {
     var needleLast = normalizeNameForSearch_(data.lastName);
     var needleFirst = normalizeNameForSearch_(data.firstName);
-    var hasOpenRequest = getAllRequests_().some(function (r) {
+    var employeeRequests = getAllRequests_().filter(function (r) {
       var haystack = normalizeNameForSearch_(r.name);
-      return haystack.indexOf(needleLast) !== -1 && haystack.indexOf(needleFirst) !== -1 &&
-        (r.status === STATUS.PENDING || r.status === STATUS.PROCESSING || r.status === STATUS.HOLD);
+      return haystack.indexOf(needleLast) !== -1 && haystack.indexOf(needleFirst) !== -1;
+    });
+
+    var hasOpenRequest = employeeRequests.some(function (r) {
+      return r.status === STATUS.PENDING || r.status === STATUS.PROCESSING || r.status === STATUS.HOLD;
     });
     if (hasOpenRequest) {
       errors.push('You already have a pending or in-review CA request. Please wait for it to be resolved before submitting another.');
+    }
+
+    // One successful CA per cutoff period: an Approved or Disbursed request already
+    // covering the current cutoff period (26-10 or 11-25) blocks a second one until
+    // the next cutoff period opens. A Rejected request does not count against this.
+    var currentCutoffPeriod = computeCutoffPeriod_();
+    var hasCutoffRequest = employeeRequests.some(function (r) {
+      return r.cutoffPeriod === currentCutoffPeriod &&
+        (r.status === STATUS.APPROVED || r.status === STATUS.DISBURSED);
+    });
+    if (hasCutoffRequest) {
+      errors.push('You already have an approved or disbursed CA request for the current cutoff period (' +
+        formatCutoffPeriodLabel_() + '). Please wait for the next cutoff period.');
     }
   }
 
