@@ -141,6 +141,21 @@ and its client-side checks are just UX, not security)
   (`findUser_`/`login`). Flagged to the project owner; add attempt throttling (e.g. a cooldown
   keyed in `Settings`) if this becomes a real concern.
 
+## Caching
+`Roles`, `Masterlist`, `Settings`, and `getAllRequests_()` are wrapped in `CacheService`
+(`cacheGetOrSet_`, TTLs in `CACHE_TTL`) to cut redundant Sheet reads. Requests' cache is invalidated
+explicitly at the end of every write path (`createRequest`, `processorReview`, etc.) since those
+all go through Code.gs. Roles/Masterlist/Settings are different — they're **only ever edited by
+hand** in the Sheet UI, so a simple `onEdit(e)` trigger (fires automatically, no manual Triggers-page
+install needed — contrast with `autoRejectExpiredHolds_` below) busts the matching cache key the
+instant one of those three tabs is hand-edited. Without it, a newly added Masterlist row (or a typo
+fix) would silently fail `verifyIdentity()` for up to `CACHE_TTL.MASTERLIST` (15 min) after being
+saved, even though the row is visibly correct in the Sheet — this bit a real employee (`Dave, Bert
+C`) shortly after being added. If you ever see "record exists but won't verify"/"role exists but
+login fails" right after a manual Sheet edit, suspect this cache before the data itself — the
+`onEdit` trigger is defense-in-depth (it can't fire for edits made via the Sheets API instead of the
+UI), and the TTLs above are still there as a fallback expiry.
+
 ## Local development / testing without redeploying
 Both `Employee.html` and `Admin.html` have a `gs()` wrapper that detects whether
 `google.script.run` exists. When it doesn't (i.e. the file was opened directly instead of served

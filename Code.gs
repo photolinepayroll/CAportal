@@ -61,9 +61,11 @@ var SETTINGS_TAB = 'Settings';
 
 /**
  * CacheService.getScriptCache() is shared across every user/execution — appropriate here since
- * all roles read the same spreadsheet-backed data. TTLs for Roles/Masterlist are pure safety nets
- * (those tabs are only ever edited by hand in the Sheet, so a short staleness window is fine);
- * Requests/Settings TTLs are also safety nets since every write path explicitly invalidates.
+ * all roles read the same spreadsheet-backed data. Roles/Masterlist/Settings are only ever edited
+ * by hand in the Sheet, so the `onEdit` simple trigger below busts their cache immediately on
+ * every hand-edit — these TTLs are just a safety net in case that trigger doesn't fire (e.g. an
+ * edit made via the Sheets API instead of the UI). Requests' TTL is also a safety net since every
+ * write path explicitly invalidates it.
  */
 var CACHE_KEYS = {
   REQUESTS: 'cache_requests_v1',
@@ -92,6 +94,27 @@ function cacheGetOrSet_(key, ttlSeconds, computeFn) {
 
 function cacheInvalidate_(key) {
   CacheService.getScriptCache().remove(key);
+}
+
+/**
+ * Simple trigger — fires automatically on any hand-edit in the Sheet UI (no manual Triggers-page
+ * install needed, unlike autoRejectExpiredHolds_). Roles/Masterlist/Settings are only ever edited
+ * by hand, so without this a freshly added employee or corrected typo stays invisible to
+ * verifyIdentity() until the cache TTL (up to 30 min for Roles) expires on its own.
+ */
+function onEdit(e) {
+  try {
+    var sheetName = e && e.range && e.range.getSheet().getName();
+    if (sheetName === MASTERLIST_TAB) {
+      cacheInvalidate_(CACHE_KEYS.MASTERLIST);
+    } else if (sheetName === ROLES_TAB) {
+      cacheInvalidate_(CACHE_KEYS.ROLES);
+    } else if (sheetName === SETTINGS_TAB) {
+      cacheInvalidate_(CACHE_KEYS.SETTINGS);
+    }
+  } catch (err) {
+    // Simple triggers must never throw.
+  }
 }
 
 // 1-based column indices for the Requests tab.

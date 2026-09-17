@@ -1,6 +1,6 @@
 # Resume Notes — CA Portal
 
-Last updated: 2026-08-20 (Processor Export feature added). Read `CLAUDE.md` first for how the system works; this file is about
+Last updated: 2026-09-17 (Masterlist/Roles/Settings cache-staleness fix). Read `CLAUDE.md` first for how the system works; this file is about
 **where things stand** and **what's left to do**.
 
 ## Current state
@@ -193,6 +193,17 @@ and iterating on real feedback.
     longer matches and the employee can submit again — no separate reset logic needed. Backend-only
     change (`Code.gs`), needs the usual paste-and-redeploy — see Pending deploy below.
 
+25. Fixed a real reported bug: an employee with a correct, freshly-added `Masterlist` row ("Dave,
+    Bert C", DOB 2026-01-01 — visibly matching what the chatbot rejected) couldn't verify identity.
+    Root cause: `getMasterlistData_()` caches the Masterlist sheet for 15 min (`CACHE_TTL.MASTERLIST`),
+    and nothing invalidated that cache when the sheet was hand-edited (its only edit path — the owner
+    fills it in manually), so a just-added/corrected row stayed invisible to `verifyIdentity()` until
+    the TTL happened to expire. Same latent risk existed for `Roles` (up to 30 min) and `Settings`.
+    Fix: added `onEdit(e)` to `Code.gs` — a **simple trigger**, so unlike `autoRejectExpiredHolds_`
+    it fires automatically the moment any of `Masterlist`/`Roles`/`Settings` is hand-edited in the
+    Sheet UI, with no manual Triggers-page step required after deploy. Backend-only change, needs the
+    usual paste-and-redeploy — see Pending deploy below. No sheet schema change.
+
 ## Open items / not yet done
 - **Login brute-force protection**: flagged to the owner, not yet implemented. `findUser_`/`login`
   has no rate limiting or lockout — credentials are guessable given enough attempts. Owner hadn't
@@ -207,12 +218,15 @@ and iterating on real feedback.
 - No automated tests exist (Apps Script has no local test runner in this setup) — verification has
   been entirely manual, walking the chat flow end-to-end after each change. See the Verification
   section pattern in past plans for what to click through.
-- **Pending deploy**: everything through item 23 above (Approver-Hold/Authorizer-batch feature, the
+- **Pending deploy**: everything through item 25 above (Approver-Hold/Authorizer-batch feature, the
   follow-up UI polish, `.nojekyll`, the empty-queue filter-row fix, the cutoff-period display
-  format, the `gs()` bridge hardening, and the Processor Export CSV/PDF) is committed and pushed to
-  GitHub, but had not yet been pasted into the Apps Script editor as of this session — confirm with
-  the owner before assuming it's live. Items 22–23 are frontend-only (`Employee.html`/`Admin.html`),
-  so they don't add new deploy-together constraints beyond the ones below.
+  format, the `gs()` bridge hardening, the Processor Export CSV/PDF, the one-CA-per-cutoff-period
+  rule, and the Masterlist/Roles/Settings cache-staleness fix) is committed and pushed to GitHub,
+  but had not yet been pasted into the Apps Script editor as of this session — confirm with the
+  owner before assuming it's live. **The cache fix (item 25) is worth prioritizing** since it's
+  actively blocking real employees from verifying right now. Items 22–23 are frontend-only
+  (`Employee.html`/`Admin.html`), so they don't add new deploy-together constraints beyond the ones
+  below.
   `Code.gs` and `Admin.html` **must** deploy together — they share the renamed
   `getApproverQueue`/`getForAuthorization`/`authorizeBatch` function names, the `hr`→`authorizer`
   role rename, and now the new `cutoffPeriodLabel` field (`Admin.html`'s tables/exports read it, so
