@@ -198,11 +198,25 @@ function getMasterlistSheet_() {
   return sheet;
 }
 
+/**
+ * Collapses non-breaking/odd Unicode spaces and zero-width characters down to plain spaces, then
+ * trims/lowercases — copy-pasting a name into the Masterlist (from Word, Excel, a PDF, etc.) often
+ * carries a non-breaking space or zero-width character that looks identical to a normal space but
+ * fails a naive === comparison against what the employee types in the chatbot.
+ */
+function normalizeNameForCompare_(value) {
+  return String(value || '')
+    .replace(/[\u200B\u200C\u200D]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
 var NO_MIDDLE_NAME_TOKENS = ['none', 'n/a', 'na', 'wala', '-', ''];
 
 /** Collapses "no middle name" variants (None, N/A, Wala, blank, ...) to '' so they all compare equal. */
 function normalizeMiddleName_(value) {
-  var v = String(value || '').trim().toLowerCase();
+  var v = normalizeNameForCompare_(value);
   return NO_MIDDLE_NAME_TOKENS.indexOf(v) !== -1 ? '' : v;
 }
 
@@ -262,16 +276,16 @@ function getMasterlistData_() {
   return getMasterlistSheet_().getDataRange().getValues();
 }
 
-/** True only if Last Name+First Name+Middle Name+Date of Birth all match the same Masterlist row (trimmed, case-insensitive). */
+/** True only if Last Name+First Name+Middle Name+Date of Birth all match the same Masterlist row (trimmed, case-insensitive, whitespace-normalized). */
 function isValidEmployee_(lastName, firstName, middleName, birthday) {
-  var needleLast = String(lastName).trim().toLowerCase();
-  var needleFirst = String(firstName).trim().toLowerCase();
+  var needleLast = normalizeNameForCompare_(lastName);
+  var needleFirst = normalizeNameForCompare_(firstName);
   var needleMiddle = normalizeMiddleName_(middleName);
   var needleBirthday = normalizeDateForCompare_(birthday);
   var data = getMasterlistData_();
   for (var i = 1; i < data.length; i++) {
-    if (String(data[i][0]).trim().toLowerCase() === needleLast &&
-      String(data[i][1]).trim().toLowerCase() === needleFirst &&
+    if (normalizeNameForCompare_(data[i][0]) === needleLast &&
+      normalizeNameForCompare_(data[i][1]) === needleFirst &&
       normalizeMiddleName_(data[i][2]) === needleMiddle &&
       normalizeDateForCompare_(data[i][3]) === needleBirthday) {
       return true;
