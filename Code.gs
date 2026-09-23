@@ -61,17 +61,18 @@ var SETTINGS_TAB = 'Settings';
 
 /**
  * CacheService.getScriptCache() is shared across every user/execution — appropriate here since
- * all roles read the same spreadsheet-backed data. TTLs for Roles/Masterlist are pure safety nets
- * (those tabs are only ever edited by hand in the Sheet, so a short staleness window is fine);
- * Requests/Settings TTLs are also safety nets since every write path explicitly invalidates.
+ * all roles read the same spreadsheet-backed data. The Roles TTL is a pure safety net (that tab
+ * is only ever edited by hand in the Sheet, so a short staleness window is fine there); Masterlist
+ * is deliberately NOT cached (see getMasterlistData_) since identity verification must see a
+ * hand-added row immediately, not after up to 15 minutes of staleness. Requests/Settings TTLs are
+ * also safety nets since every write path explicitly invalidates.
  */
 var CACHE_KEYS = {
   REQUESTS: 'cache_requests_v1',
   ROLES: 'cache_roles_v1',
-  MASTERLIST: 'cache_masterlist_v1',
   SETTINGS: 'cache_settings_v1'
 };
-var CACHE_TTL = { REQUESTS: 300, ROLES: 1800, MASTERLIST: 900, SETTINGS: 120 };
+var CACHE_TTL = { REQUESTS: 300, ROLES: 1800, SETTINGS: 120 };
 
 function cacheGetOrSet_(key, ttlSeconds, computeFn) {
   var cache = CacheService.getScriptCache();
@@ -256,10 +257,9 @@ function setSetting_(key, value) {
   cacheInvalidate_(CACHE_KEYS.SETTINGS);
 }
 
+/** Deliberately uncached — see cache comment above. A hand-added Masterlist row must verify right away. */
 function getMasterlistData_() {
-  return cacheGetOrSet_(CACHE_KEYS.MASTERLIST, CACHE_TTL.MASTERLIST, function () {
-    return getMasterlistSheet_().getDataRange().getValues();
-  });
+  return getMasterlistSheet_().getDataRange().getValues();
 }
 
 /** True only if Last Name+First Name+Middle Name+Date of Birth all match the same Masterlist row (trimmed, case-insensitive). */
