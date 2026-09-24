@@ -616,7 +616,7 @@
     function loadProcessorQueue(session) {
       var container = document.getElementById('proc-results');
       container.innerHTML = '<p class="empty-state">Loading…</p>';
-      gs('getPendingForProcessor', session.username, session.password).then(function (rows) {
+      gs('getProcessorQueue', session.username, session.password).then(function (rows) {
         // google.script.run (direct Apps Script /exec link) delivers an empty array as null, not [].
         rows = rows || [];
         procRowsCache = rows;
@@ -631,12 +631,16 @@
     /** Filter/toolbar chrome, built once per load. Table body itself is rendered by renderProcessorTable. */
     function renderProcessorQueue(rows, session) {
       var container = document.getElementById('proc-results');
-      if (!rows.length) {
-        container.innerHTML = '<p class="empty-state">No pending requests.</p>';
-        return;
-      }
       container.innerHTML =
         '<div class="filter-row">' +
+          '<div class="field-group">' +
+            '<label for="proc-status-filter">Filter by status</label>' +
+            '<select id="proc-status-filter">' +
+              '<option value="pending">Pending</option>' +
+              '<option value="forwarded">Forwarded</option>' +
+              '<option value="rejected">Rejected</option>' +
+            '</select>' +
+          '</div>' +
           '<div class="field-group">' +
             '<label for="proc-filter">Filter by name</label>' +
             '<input type="text" id="proc-filter" placeholder="Type a name…">' +
@@ -666,6 +670,9 @@
         '</div>' +
         '<div id="proc-table-area"></div>';
 
+      document.getElementById('proc-status-filter').addEventListener('change', function () {
+        applyProcessorFilter(session);
+      });
       document.getElementById('proc-filter').addEventListener('input', function () {
         applyProcessorFilter(session);
       });
@@ -679,44 +686,65 @@
         exportProcessorPdf_();
       });
       wireProcessorBulkToolbar(session);
-      renderProcessorTable(rows, session);
+      applyProcessorFilter(session);
+    }
+
+    /**
+     * Which #proc-status-filter bucket a row belongs to. A Rejected row was rejected by the Processor
+     * iff APPROVER_REMARKS is empty (the Approver's reject paths always write remarks); anything else
+     * past Pending has been forwarded.
+     */
+    function procStatusBucket_(r) {
+      if (r.status === 'Pending') return 'pending';
+      if (r.status === 'Rejected' && String(r.approverRemarks || '').trim() === '') return 'rejected';
+      return 'forwarded';
     }
 
     function applyProcessorFilter(session) {
+      var statusValue = document.getElementById('proc-status-filter').value;
       var q = document.getElementById('proc-filter').value.trim().toLowerCase();
       var branch = document.getElementById('proc-branch-filter').value;
       var filtered = procRowsCache.filter(function (r) {
+        var statusMatch = procStatusBucket_(r) === statusValue;
         var nameMatch = !q || String(r.name || '').toLowerCase().indexOf(q) !== -1;
         var branchMatch = !branch || r.branch === branch;
-        return nameMatch && branchMatch;
+        return statusMatch && nameMatch && branchMatch;
       });
-      renderProcessorTable(filtered, session);
+      renderProcessorTable(filtered, session, statusValue === 'pending');
     }
 
-    function renderProcessorTable(rows, session) {
+    /** actionable: false for the read-only Forwarded/Rejected categories — hides checkboxes, actions, and the bulk toolbar. */
+    function renderProcessorTable(rows, session, actionable) {
       var area = document.getElementById('proc-table-area');
       procVisibleRows = rows;
       if (!rows.length) {
-        area.innerHTML = '<p class="empty-state">No requests match that name.</p>';
-        updateProcessorBulkToolbar();
+        area.innerHTML = '<p class="empty-state">No requests match this view.</p>';
+        updateProcessorBulkToolbar(actionable);
         return;
       }
-      var allChecked = rows.every(function (r) { return procSelectedIds.has(r.requestId); });
+      var allChecked = actionable && rows.every(function (r) { return procSelectedIds.has(r.requestId); });
       var html = '<div class="table-scroll"><table class="ledger-table"><thead><tr>' +
-        '<th><input type="checkbox" id="proc-select-all"' + (allChecked ? ' checked' : '') + '></th>' +
-        '<th>Name</th><th>Branch</th><th>Amount</th><th>Cutoff</th><th>Working Days</th><th>Purpose</th><th>Actions</th>' +
+        (actionable ? '<th><input type="checkbox" id="proc-select-all"' + (allChecked ? ' checked' : '') + '></th>' : '') +
+        '<th>Name</th><th>Branch</th><th>Amount</th><th>Cutoff</th><th>Working Days</th><th>Purpose</th>' +
+        (actionable ? '<th>Actions</th>' : '<th>Status</th><th>Processor Remarks</th>') +
         '</tr></thead><tbody>';
       rows.forEach(function (r) {
         var checked = procSelectedIds.has(r.requestId) ? ' checked' : '';
         html += '<tr>' +
-          '<td><input type="checkbox" class="proc-row-select" data-id="' + r.requestId + '"' + checked + '></td>' +
+          (actionable ? '<td><input type="checkbox" class="proc-row-select" data-id="' + r.requestId + '"' + checked + '></td>' : '') +
           '<td>' + r.name + '</td>' +
           '<td>' + r.branch + '</td>' +
           '<td class="num">' + formatCurrency(r.amount) + '</td>' +
           '<td>' + r.cutoffPeriodLabel + '</td>' +
           '<td class="num">' + r.daysPresent + '</td>' +
-          '<td>' + r.purpose + '</td>' +
-          '<td>' +
+          '<td>' + r.purpose + '</td>';
+        if (!actionable) {
+          html += '<td>' + r.status + '</td>' +
+            '<td>' + (r.processorRemarks || '—') + '</td>' +
+            '</tr>';
+          return;
+        }
+        html += '<td>' +
             '<div class="row-actions">' +
               '<button class="btn btn-approve" data-action="forward" data-id="' + r.requestId + '">Forward</button>' +
               '<button class="btn btn-reject btn-outline" data-action="reject" data-id="' + r.requestId + '">Reject</button>' +
@@ -738,6 +766,11 @@
       });
       html += '</tbody></table></div>';
       area.innerHTML = html;
+
+      if (!actionable) {
+        updateProcessorBulkToolbar(actionable);
+        return;
+      }
 
       area.querySelectorAll('[data-action]').forEach(function (btn) {
         btn.addEventListener('click', function () {
@@ -771,23 +804,23 @@
         rows.forEach(function (r) {
           if (e.target.checked) procSelectedIds.add(r.requestId); else procSelectedIds.delete(r.requestId);
         });
-        renderProcessorTable(rows, session);
+        renderProcessorTable(rows, session, actionable);
       });
       area.querySelectorAll('.proc-row-select').forEach(function (cb) {
         cb.addEventListener('change', function () {
           if (cb.checked) procSelectedIds.add(cb.dataset.id); else procSelectedIds.delete(cb.dataset.id);
-          updateProcessorBulkToolbar();
+          updateProcessorBulkToolbar(actionable);
         });
       });
 
-      updateProcessorBulkToolbar();
+      updateProcessorBulkToolbar(actionable);
     }
 
-    function updateProcessorBulkToolbar() {
+    function updateProcessorBulkToolbar(actionable) {
       var n = procSelectedIds.size;
       var toolbar = document.getElementById('proc-bulk-toolbar');
       if (!toolbar) return;
-      toolbar.style.display = n > 0 ? 'flex' : 'none';
+      toolbar.style.display = (actionable && n > 0) ? 'flex' : 'none';
       document.getElementById('proc-bulk-count').textContent = n > 0 ? (n + ' selected') : '';
       if (n === 0) document.getElementById('proc-bulk-reject-panel').classList.remove('show');
     }

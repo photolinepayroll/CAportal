@@ -99,8 +99,13 @@ and its client-side checks are just UX, not security)
   the Processor Queue's Export CSV/PDF is a pre-decision review sheet — every row carries an
   intentionally blank "Remarks" column (both formats) for a processor to hand-annotate while
   reviewing away from the screen, and the PDF footer has two blank signatory lines, "Prepared by" /
-  "Checked by" (vs. the Authorizer PDF's three). Both exports respect the tab's current name/branch
+  "Checked by" (vs. the Authorizer PDF's three). Both exports respect the tab's current status/name/branch
   filter, not the full unfiltered queue.
+- **Processor status filter**: the Processor tab mirrors the Approver tab's three filters (status,
+  name, branch). `getProcessorQueue` returns every request and `Admin.html` buckets them client-side
+  (`procStatusBucket_`): **Pending** (actionable, the default), **Forwarded** (anything past the
+  Processor stage, including Approver-rejected), and **Rejected** (Rejected with empty
+  `APPROVER_REMARKS`, i.e. rejected by the Processor). Forwarded/Rejected views are read-only.
 - **Cutoff period**: auto-computed from today's day-of-month, never asked — 11th–25th ⇒ `11-25`,
   else ⇒ `26-10` (`computeCutoffPeriod_`); that raw code is what's stored in the sheet's
   `Cutoff Period (auto)` column. Everywhere it's *displayed* (Employee.html chat, Admin.html

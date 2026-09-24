@@ -21,6 +21,7 @@ function doPost(e) {
     createRequest: createRequest,
     getRequestByLastNameAndId: getRequestByLastNameAndId,
     getPendingForProcessor: getPendingForProcessor,
+    getProcessorQueue: getProcessorQueue,
     getApproverQueue: getApproverQueue,
     getForAuthorization: getForAuthorization,
     authorizeBatch: authorizeBatch,
@@ -697,6 +698,17 @@ function getRequestByLastNameAndId(lastName, requestId) {
 function getPendingForProcessor(username, password) {
   requireAccess_(username, password, ROLES.PROCESSOR);
   return getAllRequests_().filter(function (r) { return r.status === STATUS.PENDING; });
+}
+
+/**
+ * Everything relevant to the Processor tab: every request, since each one is either Pending (actionable),
+ * Forwarded (past the Processor stage — Processing/Hold/Approved/Disbursed, or Rejected by the Approver),
+ * or Rejected by the Processor. Admin.html buckets them client-side; a Rejected row was rejected by the
+ * Processor iff APPROVER_REMARKS is empty (same discriminator getApproverQueue uses, inverted).
+ */
+function getProcessorQueue(username, password) {
+  requireAccess_(username, password, ROLES.PROCESSOR);
+  return getAllRequests_();
 }
 
 /**
