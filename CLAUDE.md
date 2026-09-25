@@ -65,16 +65,24 @@ and its client-side checks are just UX, not security)
   `CA_AMOUNTS` server-side just like at creation, and only applied on `action === 'forward'` (never
   on reject, never in batch). If the amount actually changes, an audit note ("Amount corrected from
   ₱X to ₱Y.") is auto-prepended to `PROCESSOR_REMARKS` so the Approver/HR can see the correction.
-- **CA window**: normally open Monday–Wednesday only (`isCaWindowOpen_`, Asia/Manila). The
-  Authorizer can force it open or closed from `Admin.html`'s Authorizer view regardless of day, for
-  emergencies.
+- **CA window**: normally open Monday–Wednesday only (`isCaWindowOpen_`/`getCaWindowState_`,
+  Asia/Manila), **and** closed on payroll dates even when they fall on Mon–Wed: the 11th–15th and
+  the 26th–end of month (`CA_PAYROLL_BLACKOUT_RANGES`). `getCaWindowStatus()` returns a `reason`
+  (`'payroll'`/`'day'`/`'forced'`) so both UIs can say why it's closed. The Authorizer can force it
+  open or closed from `Admin.html`'s Authorizer view regardless of day **or** payroll date, for
+  emergencies. Force Open overrides both rules.
 - **One successful CA per cutoff period**: an employee cannot submit a new CA request if they
-  already have an `Approved` or `Disbursed` request whose `cutoffPeriod` matches the current cutoff
-  period (`validateNewRequest_`, checked against `computeCutoffPeriod_()`). A `Rejected` request
-  does not count against this — it frees the employee to try again within the same cutoff period.
-  This is separate from (and in addition to) the open-request check below; both can block a
-  submission independently. Cutoff periods are 26th (previous month) – 10th (current month) and
-  11th–25th (current month) — see Cutoff period below.
+  already have an `Approved` or `Disbursed` request falling inside the *current* cutoff window
+  (`validateNewRequest_`, checked against `computeCutoffWindow_()`, which returns actual
+  `{start, end}` calendar dates for the window `computeCutoffPeriod_()`'s current instance falls
+  in). The check compares each past request's own `timestamp` against those dates — **not** the
+  raw recurring `cutoffPeriod` code (`'26-10'`/`'11-25'`) alone, since that code repeats every
+  month and comparing it directly would wrongly keep matching a request from a *previous* month's
+  instance of the same code, permanently blocking the employee instead of refreshing once the
+  period actually ends. A `Rejected` request does not count against this — it frees the employee
+  to try again within the same cutoff period. This is separate from (and in addition to) the
+  open-request check below; both can block a submission independently. Cutoff periods are 26th
+  (previous month) – 10th (current month) and 11th–25th (current month) — see Cutoff period below.
 - **Approver Hold + auto-reject deadline**: the Approver can place a Processing request on `Hold`
   instead of deciding immediately (`approverReview`'s `'hold'` action) — a Held request can still be
   approved or rejected at any time. But any request still on Hold after **11:00 AM on the Wednesday
@@ -122,7 +130,10 @@ and its client-side checks are just UX, not security)
   First Name, Middle Name (or "None"), and Birthday, and calls `verifyIdentity()` — all four must
   match one row in `Masterlist`. Only then does it proceed to the actual CA questions. Middle name
   gets folded into the stored `Name` cell as "Last, First Middle" (Proper Case auto-applied via
-  `toProperCase_`); there's no separate Middle Name column.
+  `toProperCase_`); there's no separate Middle Name column. `isValidEmployee_` reads `Masterlist`
+  directly (deliberately **not** through `CacheService`) so hand-added rows verify immediately, and
+  normalizes names first (collapses non-breaking/odd whitespace, strips zero-width chars) so rows
+  pasted from Word/Excel/PDF still match.
 - **Request ID**: `SCA#000001`-style, sequential, generated under `LockService.getScriptLock()` so
   concurrent submissions from different employees can never collide on the same number.
 - **"My Requests" self-service lookup**: requires Last Name **and** the SCA# together

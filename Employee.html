@@ -597,7 +597,11 @@
       gs('getCaWindowStatus').then(function (status) {
         hideTyping();
         if (!status.open) {
-          addBotBubble('CA requests are closed right now. This is only open Monday through Wednesday — please try again on those days.');
+          if (status.reason === 'payroll') {
+            addBotBubble('CA requests are closed during payroll dates (11th–15th and 26th–end of month). Please try again on the next Monday to Wednesday outside those dates.');
+          } else {
+            addBotBubble('CA requests are closed right now. They are open Monday through Wednesday only, except on payroll dates (11th–15th and 26th–end of month).');
+          }
           offerMenuButton();
           return;
         }

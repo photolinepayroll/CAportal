@@ -132,6 +132,10 @@ var CA_AMOUNTS = [500, 1000, 1500, 2000];
 
 var CA_WINDOW_DAYS = [1, 2, 3]; // Mon, Tue, Wed (Date#getDay style: Sun=0..Sat=6)
 
+// Payroll-processing days of month (inclusive) when the AUTO window stays closed even on Mon-Wed.
+// 31 means "through end of month", so shorter months are covered automatically.
+var CA_PAYROLL_BLACKOUT_RANGES = [[11, 15], [26, 31]];
+
 var CA_WINDOW_OVERRIDES = {
   AUTO: 'AUTO',
   FORCE_OPEN: 'FORCE_OPEN',
@@ -336,25 +340,42 @@ function buildFullName_(lastName, firstName, middleName) {
   return name;
 }
 
-/** AUTO = Mon-Wed only (Asia/Manila); FORCE_OPEN/FORCE_CLOSED bypass the day check entirely. */
-function isCaWindowOpen_() {
+/**
+ * {open, reason} for `refDate` (default now, Asia/Manila). AUTO = Mon-Wed only, and closed on
+ * payroll dates (CA_PAYROLL_BLACKOUT_RANGES) even when those fall on Mon-Wed. FORCE_OPEN/
+ * FORCE_CLOSED bypass both checks entirely. reason: 'forced' | 'payroll' | 'day' | '' (when open).
+ */
+function getCaWindowState_(refDate) {
   var override = getSetting_('CA_WINDOW_OVERRIDE') || CA_WINDOW_OVERRIDES.AUTO;
-  if (override === CA_WINDOW_OVERRIDES.FORCE_OPEN) return true;
-  if (override === CA_WINDOW_OVERRIDES.FORCE_CLOSED) return false;
+  if (override === CA_WINDOW_OVERRIDES.FORCE_OPEN) return { open: true, reason: '' };
+  if (override === CA_WINDOW_OVERRIDES.FORCE_CLOSED) return { open: false, reason: 'forced' };
+  var d = refDate ? new Date(refDate) : new Date();
+  var dayOfMonth = Number(Utilities.formatDate(d, 'Asia/Manila', 'd'));
+  var isPayrollDate = CA_PAYROLL_BLACKOUT_RANGES.some(function (range) {
+    return dayOfMonth >= range[0] && dayOfMonth <= range[1];
+  });
+  if (isPayrollDate) return { open: false, reason: 'payroll' };
   var dayNames = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
-  var dow = dayNames[Utilities.formatDate(new Date(), 'Asia/Manila', 'EEE')];
-  return CA_WINDOW_DAYS.indexOf(dow) !== -1;
+  var dow = dayNames[Utilities.formatDate(d, 'Asia/Manila', 'EEE')];
+  if (CA_WINDOW_DAYS.indexOf(dow) === -1) return { open: false, reason: 'day' };
+  return { open: true, reason: '' };
+}
+
+function isCaWindowOpen_(refDate) {
+  return getCaWindowState_(refDate).open;
 }
 
 /** Client-callable (no PIN) — the chatbot needs this before letting anyone start a new request. */
 function getCaWindowStatus() {
+  var state = getCaWindowState_();
   return {
-    open: isCaWindowOpen_(),
+    open: state.open,
+    reason: state.reason,
     override: getSetting_('CA_WINDOW_OVERRIDE') || CA_WINDOW_OVERRIDES.AUTO
   };
 }
 
-/** Authorizer-only: force the CA window open/closed, or reset to the Mon-Wed auto schedule. */
+/** Authorizer-only: force the CA window open/closed, or reset to the auto schedule (Mon-Wed, excl. payroll dates). */
 function setCaWindowOverride(value, username, password) {
   requireAccess_(username, password, ROLES.AUTHORIZER);
   if (Object.keys(CA_WINDOW_OVERRIDES).indexOf(value) === -1) {
@@ -404,6 +425,37 @@ function formatCutoffPeriodLabel_(refDate) {
     endMonth = month; endDay = 10;
   }
   return MONTH_ABBR_[startMonth] + ' ' + startDay + ' - ' + MONTH_ABBR_[endMonth] + ' ' + endDay;
+}
+
+/**
+ * Actual calendar {start, end} Date boundaries (with year) of whichever cutoff window `refDate`
+ * (default now) falls in — unlike computeCutoffPeriod_()'s raw '26-10'/'11-25' code, which repeats
+ * every month, this pins down one specific instance of that window so a request from a past month
+ * can't be mistaken for one in the current period. Handles the Dec 26 - Jan 10 year rollover.
+ */
+function computeCutoffWindow_(refDate) {
+  var tz = 'Asia/Manila';
+  var d = refDate ? new Date(refDate) : new Date();
+  var day = Number(Utilities.formatDate(d, tz, 'd'));
+  var month = Number(Utilities.formatDate(d, tz, 'M')) - 1; // 0-based
+  var year = Number(Utilities.formatDate(d, tz, 'yyyy'));
+
+  var start, end;
+  if (day >= 11 && day <= 25) {
+    start = new Date(year, month, 11);
+    end = new Date(year, month, 25, 23, 59, 59, 999);
+  } else if (day >= 26) {
+    start = new Date(year, month, 26);
+    var endMonth = month + 1, endYear = year;
+    if (endMonth > 11) { endMonth = 0; endYear++; }
+    end = new Date(endYear, endMonth, 10, 23, 59, 59, 999);
+  } else {
+    var startMonth = month - 1, startYear = year;
+    if (startMonth < 0) { startMonth = 11; startYear--; }
+    start = new Date(startYear, startMonth, 26);
+    end = new Date(year, month, 10, 23, 59, 59, 999);
+  }
+  return { start: start, end: end };
 }
 
 /**
@@ -491,7 +543,7 @@ function validateNewRequest_(data) {
   data = data || {};
 
   if (!isCaWindowOpen_()) {
-    errors.push('Sarado muna ang pagtanggap ng CA requests ngayon. Bukas lang ito tuwing Lunes hanggang Miyerkules.');
+    errors.push('CA requests are closed right now. They are open Monday to Wednesday only, except on payroll dates (11th-15th and 26th-end of month).');
     return { valid: false, errors: errors };
   }
 
@@ -537,9 +589,13 @@ function validateNewRequest_(data) {
     // One successful CA per cutoff period: an Approved or Disbursed request already
     // covering the current cutoff period (26-10 or 11-25) blocks a second one until
     // the next cutoff period opens. A Rejected request does not count against this.
-    var currentCutoffPeriod = computeCutoffPeriod_();
+    // Scoped by each request's own timestamp against the current window's actual calendar
+    // dates (not the raw recurring code), since the same code repeats every month and would
+    // otherwise wrongly keep blocking across different months' instances of that period.
+    var currentWindow = computeCutoffWindow_();
     var hasCutoffRequest = employeeRequests.some(function (r) {
-      return r.cutoffPeriod === currentCutoffPeriod &&
+      var ts = r.timestamp ? new Date(r.timestamp) : null;
+      return ts && ts >= currentWindow.start && ts <= currentWindow.end &&
         (r.status === STATUS.APPROVED || r.status === STATUS.DISBURSED);
     });
     if (hasCutoffRequest) {

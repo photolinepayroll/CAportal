@@ -1,6 +1,6 @@
 # Resume Notes — CA Portal
 
-Last updated: 2026-08-20 (Processor Export feature added). Read `CLAUDE.md` first for how the system works; this file is about
+Last updated: 2026-09-25 (cutoff-window fix, Masterlist verification fixes, Processor status filter). Read `CLAUDE.md` first for how the system works; this file is about
 **where things stand** and **what's left to do**.
 
 ## Current state
@@ -192,6 +192,40 @@ and iterating on real feedback.
     calendar rolls into the next cutoff period (26-10 ↔ 11-25) the old request's period code no
     longer matches and the employee can submit again — no separate reset logic needed. Backend-only
     change (`Code.gs`), needs the usual paste-and-redeploy — see Pending deploy below.
+    **Superseded by item 25**: comparing the raw code turned out to be a bug (see below).
+25. Fixed item 24's rule permanently blocking employees: the raw `26-10`/`11-25` code repeats every
+    month, so an Approved request from *last* month's `11-25` window still matched *this* month's
+    `11-25` and never refreshed. New `computeCutoffWindow_(refDate)` returns the actual `{start, end}`
+    calendar dates (with year, handling the Dec 26 – Jan 10 rollover) of the current window, and
+    `validateNewRequest_` now checks each past request's own `timestamp` against those dates instead
+    of comparing codes. Backend-only (`Code.gs`). CLAUDE.md updated to match.
+26. Fixed newly-added employees failing identity verification (two commits, `Code.gs` only):
+    - `isValidEmployee_` no longer reads `Masterlist` through the 15-minute script cache, where a row
+      hand-added to the sheet could fail verification until the cache expired. It reads the sheet
+      directly now (same as `getBranchList()`).
+    - Names are normalized before matching: all whitespace variants (e.g. non-breaking spaces from
+      Word/Excel/PDF copy-paste) collapse to one space and zero-width chars are stripped, so a row
+      that *looks* right but contains invisible characters still matches.
+    - Note: the unmerged branch `claude/dazzling-mendel-71yv9k` tried an alternate fix (an `onEdit`
+      trigger busting the Masterlist/Roles/Settings cache). Main's direct-read approach supersedes it
+      for Masterlist; that branch was not merged.
+27. Added a status filter to the Processor Queue (`Admin.html` + `Code.gs`), mirroring the Approver
+    tab: **Pending** (default, actionable), **Forwarded** (past the Processor stage, including
+    Approver-rejected), **Rejected** (rejected by the Processor, i.e. empty `APPROVER_REMARKS`).
+    Forwarded/Rejected are read-only with Status and Processor Remarks columns. New backend
+    `getProcessorQueue` returns every request for client-side bucketing (`procStatusBucket_`); the
+    filter row always shows, even with nothing pending. Processor exports respect the status filter
+    too. `Code.gs` and `Admin.html` must deploy together for this one (new function name).
+28. Closed the CA window on payroll dates (owner request, 2026-09-25): under `AUTO` the window is
+    now closed on the 11th–15th and the 26th–end of month **even if that day is Mon–Wed**
+    (`CA_PAYROLL_BLACKOUT_RANGES` in `Code.gs`). The logic moved into a new
+    `getCaWindowState_(refDate)` → `{open, reason}` helper; `isCaWindowOpen_` wraps it, and
+    `getCaWindowStatus()` now also returns `reason` (`'payroll'`/`'day'`/`'forced'`). Force Open
+    still overrides both rules (owner's choice). `Employee.html` shows a payroll-specific closed
+    message, and `Admin.html`'s Authorizer panel shows "CLOSED (payroll dates)" and relabels Auto as
+    "Auto (Mon–Wed, excl. payroll dates)". The server-side closed error in `validateNewRequest_` was
+    still in Tagalog and is now English and mentions both rules. Checked with a Node harness over
+    sample dates (payroll Mon/Tue, short-month Feb 26, Thu, override cases). Not yet committed.
 
 ## Open items / not yet done
 - **Login brute-force protection**: flagged to the owner, not yet implemented. `findUser_`/`login`
@@ -207,12 +241,15 @@ and iterating on real feedback.
 - No automated tests exist (Apps Script has no local test runner in this setup) — verification has
   been entirely manual, walking the chat flow end-to-end after each change. See the Verification
   section pattern in past plans for what to click through.
-- **Pending deploy**: everything through item 23 above (Approver-Hold/Authorizer-batch feature, the
+- **Pending deploy**: everything through item 28 above (items 24–26 are `Code.gs`-only, 27 is
+  `Code.gs` + `Admin.html`, 28 is `Code.gs` + `Employee.html` + `Admin.html`; earlier ones are the Approver-Hold/Authorizer-batch feature, the
   follow-up UI polish, `.nojekyll`, the empty-queue filter-row fix, the cutoff-period display
-  format, the `gs()` bridge hardening, and the Processor Export CSV/PDF) is committed and pushed to
-  GitHub, but had not yet been pasted into the Apps Script editor as of this session — confirm with
+  format, the `gs()` bridge hardening, and the Processor Export CSV/PDF). All of it except items 25
+  and 28 is committed and pushed to GitHub, but had not yet been pasted into the Apps Script editor as of this session — confirm with
   the owner before assuming it's live. Items 22–23 are frontend-only (`Employee.html`/`Admin.html`),
-  so they don't add new deploy-together constraints beyond the ones below.
+  so they don't add new deploy-together constraints beyond the ones below. **Items 25 (the
+  cutoff-window fix) and 28 (payroll-date closure) are uncommitted local work as of 2026-09-25.**
+  Commit and push them before deploying, or item 24's bug goes live.
   `Code.gs` and `Admin.html` **must** deploy together — they share the renamed
   `getApproverQueue`/`getForAuthorization`/`authorizeBatch` function names, the `hr`→`authorizer`
   role rename, and now the new `cutoffPeriodLabel` field (`Admin.html`'s tables/exports read it, so

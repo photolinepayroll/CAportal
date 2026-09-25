@@ -307,7 +307,7 @@
           <div class="window-panel" id="ca-window-panel">
             <div class="window-status" id="ca-window-status">Loading CA window status…</div>
             <div class="row-actions">
-              <button class="btn btn-outline" data-override="AUTO" type="button">Auto (Mon–Wed)</button>
+              <button class="btn btn-outline" data-override="AUTO" type="button">Auto (Mon–Wed, excl. payroll dates)</button>
               <button class="btn btn-approve" data-override="FORCE_OPEN" type="button">Force Open</button>
               <button class="btn btn-reject" data-override="FORCE_CLOSED" type="button">Force Close</button>
             </div>
@@ -1137,7 +1137,8 @@
       var statusEl = document.getElementById('ca-window-status');
       var dotClass = status.open ? 'open' : 'closed';
       var label = status.open ? 'OPEN' : 'CLOSED';
-      var overrideLabel = { AUTO: 'Auto (Mon–Wed)', FORCE_OPEN: 'Force Open', FORCE_CLOSED: 'Force Closed' }[status.override] || status.override;
+      if (!status.open && status.reason === 'payroll') label += ' (payroll dates)';
+      var overrideLabel = { AUTO: 'Auto (Mon–Wed, excl. payroll dates)', FORCE_OPEN: 'Force Open', FORCE_CLOSED: 'Force Closed' }[status.override] || status.override;
       statusEl.innerHTML = '<span class="dot ' + dotClass + '"></span>CA Requests: <strong>' + label + '</strong> &middot; ' + overrideLabel;
       document.querySelectorAll('#ca-window-panel [data-override]').forEach(function (btn) {
         btn.classList.toggle('active', btn.dataset.override === status.override);
