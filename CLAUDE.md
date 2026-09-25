@@ -150,7 +150,9 @@ and its client-side checks are just UX, not security)
   `Admin.html` shows a red "Inactive: …" badge next to the name (screen only, not in exports).
 - **Employees tab** (`Admin.html`, admin + authorizer; `canAccess` special-cases the `employees`
   view): search/filter the Masterlist, change status (`setEmployeeStatus`), add single or batch by
-  pasting rows from Excel (`addEmployees`, with a client-side preview; the server re-validates and
+  uploading a CSV/Excel file (downloadable template; `.xlsx` is read client-side with SheetJS,
+  lazy-loaded from cdn.jsdelivr.net only when needed) or pasting rows (`addEmployees`, with a
+  client-side preview; the server re-validates and
   skips duplicates/bad birthdays with reasons), and delete single or checked rows (`deleteEmployees`).
   All writes run under `LockService` and re-check that the target row still holds the expected name
   before touching it, since staff can also edit/sort the sheet by hand. Deleting keeps past CA requests.
