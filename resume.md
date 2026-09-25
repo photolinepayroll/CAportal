@@ -226,6 +226,21 @@ and iterating on real feedback.
     "Auto (Mon–Wed, excl. payroll dates)". The server-side closed error in `validateNewRequest_` was
     still in Tagalog and is now English and mentions both rules. Checked with a Node harness over
     sample dates (payroll Mon/Tue, short-month Feb 26, Thu, override cases).
+29. Employee management + inactive-employee block (owner request, 2026-09-25): employees who have
+    resigned, been separated, or are on leave have no salary to deduct a CA from, so they can't file.
+    - `Masterlist` gained column E `Status` (blank = Active) and column G `Status Updated` (audit).
+    - New `Admin.html` **Employees** tab for admin + authorizer: search/filter, change status,
+      add single or batch (paste from Excel with preview), delete single or batch.
+      Backend: `getEmployeeList`, `setEmployeeStatus`, `addEmployees`, `deleteEmployees` (all
+      whitelisted in `doPost`, all in `gs()`'s no-auto-retry `WRITE_FUNCTIONS` except the read).
+    - Chatbot: `verifyIdentity` now returns `{valid, eligible}`; inactive → "not eligible, contact
+      HR". `validateNewRequest_` re-checks, and its leftover Tagalog "not verified" error is now English.
+    - Open requests of inactive employees get a red "Inactive: …" badge in the Processor/Approver/
+      Authorizer queues (owner chose flag-only, no auto-reject).
+    - Column F (Branches) shares rows with employees, so add/delete never touch it (see CLAUDE.md).
+    - Checked with a Node harness running the real `Code.gs` against a fake sheet (add incl.
+      duplicates/bad dates, status, eligibility, badge matching, batch delete with a stale row,
+      branch list unchanged) and a test of the paste parser.
 
 ## Open items / not yet done
 - **Login brute-force protection**: flagged to the owner, not yet implemented. `findUser_`/`login`
@@ -241,7 +256,8 @@ and iterating on real feedback.
 - No automated tests exist (Apps Script has no local test runner in this setup) — verification has
   been entirely manual, walking the chat flow end-to-end after each change. See the Verification
   section pattern in past plans for what to click through.
-- **Deployed 2026-09-25 (version @35)**: everything through item 28 is live on the existing
+- **Deployed 2026-09-25 (version @36)**: everything through item 29 is live (item 29 went up as
+  @36 the same evening, after @35 below). Everything through item 28 is live on the existing
   `/exec` URL (deployment `AKfycbwdC3…`), pushed and deployed via clasp from commit `4a558db` as the
   owner account `photoline.payroll@gmail.com`. Before this, the live editor had `Code.gs` from
   `d2c9fec` but `Employee.html`/`Admin.html` from Aug 19 (`7daeb51`). Verified live:

@@ -33,7 +33,11 @@ function doPost(e) {
     getCaWindowStatus: getCaWindowStatus,
     setCaWindowOverride: setCaWindowOverride,
     verifyIdentity: verifyIdentity,
-    getBranchList: getBranchList
+    getBranchList: getBranchList,
+    getEmployeeList: getEmployeeList,
+    setEmployeeStatus: setEmployeeStatus,
+    addEmployees: addEmployees,
+    deleteEmployees: deleteEmployees
   };
   var response;
   try {
@@ -200,7 +204,34 @@ function getMasterlistSheet_() {
     sheet = ss.insertSheet(MASTERLIST_TAB);
     sheet.appendRow(['Last Name', 'First Name', 'Middle Name', 'Date of Birth']);
   }
+  // Self-heal the Status (E) / Status Updated (G) headers; F1 belongs to the separate Branches list.
+  var headers = sheet.getRange(1, MASTERLIST_STATUS_COL, 1, 3).getValues()[0]; // E1:G1
+  if (!String(headers[0]).trim()) sheet.getRange(1, MASTERLIST_STATUS_COL).setValue('Status');
+  if (!String(headers[2]).trim()) sheet.getRange(1, MASTERLIST_STATUS_UPDATED_COL).setValue('Status Updated');
   return sheet;
+}
+
+// Masterlist columns (1-based). E/G were added for employee status; F is the unrelated Branches list.
+var MASTERLIST_STATUS_COL = 5;
+var MASTERLIST_STATUS_UPDATED_COL = 7;
+
+var EMPLOYEE_STATUS = {
+  ACTIVE: 'Active',
+  RESIGNED: 'Resigned',
+  SEPARATED: 'Separated',
+  ON_LEAVE: 'On Leave'
+};
+
+var NOT_ELIGIBLE_MESSAGE = 'You\'re not eligible to file a cash advance right now. Please contact HR.';
+
+/** Blank or unrecognized → Active, so a typo in column E can never lock an employee out by accident. */
+function normalizeEmployeeStatus_(value) {
+  var v = String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  var keys = Object.keys(EMPLOYEE_STATUS);
+  for (var i = 0; i < keys.length; i++) {
+    if (EMPLOYEE_STATUS[keys[i]].toLowerCase() === v) return EMPLOYEE_STATUS[keys[i]];
+  }
+  return EMPLOYEE_STATUS.ACTIVE;
 }
 
 /**
@@ -281,27 +312,40 @@ function getMasterlistData_() {
   return getMasterlistSheet_().getDataRange().getValues();
 }
 
-/** True only if Last Name+First Name+Middle Name+Date of Birth all match the same Masterlist row (trimmed, case-insensitive, whitespace-normalized). */
-function isValidEmployee_(lastName, firstName, middleName, birthday) {
+/**
+ * The Masterlist row where Last Name+First Name+Middle Name+Date of Birth all match (trimmed,
+ * case-insensitive, whitespace-normalized), as {row (1-based sheet row), status}, or null.
+ * `data` is optional (pass an already-read getMasterlistData_() to avoid a second read).
+ */
+function findEmployee_(lastName, firstName, middleName, birthday, data) {
   var needleLast = normalizeNameForCompare_(lastName);
   var needleFirst = normalizeNameForCompare_(firstName);
   var needleMiddle = normalizeMiddleName_(middleName);
   var needleBirthday = normalizeDateForCompare_(birthday);
-  var data = getMasterlistData_();
+  data = data || getMasterlistData_();
   for (var i = 1; i < data.length; i++) {
     if (normalizeNameForCompare_(data[i][0]) === needleLast &&
       normalizeNameForCompare_(data[i][1]) === needleFirst &&
       normalizeMiddleName_(data[i][2]) === needleMiddle &&
       normalizeDateForCompare_(data[i][3]) === needleBirthday) {
-      return true;
+      return { row: i + 1, status: normalizeEmployeeStatus_(data[i][MASTERLIST_STATUS_COL - 1]) };
     }
   }
-  return false;
+  return null;
 }
 
-/** Client-callable (no PIN) — chatbot calls this right after collecting identity fields, before asking any CA details. */
+function isValidEmployee_(lastName, firstName, middleName, birthday) {
+  return findEmployee_(lastName, firstName, middleName, birthday) !== null;
+}
+
+/**
+ * Client-callable (no PIN) — chatbot calls this right after collecting identity fields, before asking
+ * any CA details. {valid: in Masterlist, eligible: status is Active}. The status itself is never
+ * returned to this public endpoint.
+ */
 function verifyIdentity(lastName, firstName, middleName, birthday) {
-  return isValidEmployee_(lastName, firstName, middleName, birthday);
+  var emp = findEmployee_(lastName, firstName, middleName, birthday);
+  return { valid: !!emp, eligible: !!emp && emp.status === EMPLOYEE_STATUS.ACTIVE };
 }
 
 var MASTERLIST_BRANCH_COL = 6; // Column F — a flat reference list of branch names, not tied to any specific row/employee.
@@ -322,6 +366,245 @@ function getBranchList() {
   });
   branches.sort(function (a, b) { return a.localeCompare(b); });
   return branches;
+}
+
+// ---------- Employee management (Admin.html "Employees" tab — admin + authorizer) ----------
+
+var MAX_EMPLOYEE_BATCH = 500;
+
+/**
+ * Birthday from a Date, 'yyyy-mm-dd', 'mm/dd/yyyy' (or m/d/yyyy), or other text Excel pastes such as
+ * 'March 5, 1990'. Returns a Date at local midnight, or null if unparseable, before 1900, or in the future.
+ */
+function parseBirthday_(value) {
+  if (value === null || value === undefined || value === '') return null;
+  var d = null;
+  if (Object.prototype.toString.call(value) === '[object Date]') {
+    d = new Date(value.getFullYear(), value.getMonth(), value.getDate());
+  } else {
+    var s = String(value).trim();
+    var m;
+    if ((m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/))) {
+      d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+      if (d.getMonth() !== Number(m[2]) - 1) d = null; // e.g. 1990-02-31
+    } else if ((m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/))) {
+      d = new Date(Number(m[3]), Number(m[1]) - 1, Number(m[2]));
+      if (d.getMonth() !== Number(m[1]) - 1) d = null;
+    } else if (/[a-z]/i.test(s) && /\b\d{4}\b/.test(s)) { // text month needs a 4-digit year
+      var t = new Date(s);
+      if (!isNaN(t.getTime())) d = new Date(t.getFullYear(), t.getMonth(), t.getDate());
+    }
+  }
+  if (!d || isNaN(d.getTime())) return null;
+  if (d.getFullYear() < 1900 || d > new Date()) return null;
+  return d;
+}
+
+function employeeKey_(lastName, firstName, middleName, birthday) {
+  return [normalizeNameForCompare_(lastName), normalizeNameForCompare_(firstName),
+    normalizeMiddleName_(middleName), normalizeDateForCompare_(birthday)].join('|');
+}
+
+function employeeAuditStamp_(verb, user) {
+  return verb + ' ' + Utilities.formatDate(new Date(), 'Asia/Manila', 'yyyy-MM-dd HH:mm') +
+    ' by ' + (user && (user.name || user.username) || 'unknown');
+}
+
+/** Masterlist row → the object shape the Employees tab renders. rowNumber is the 1-based sheet row. */
+function masterlistRowToEmployee_(r, rowNumber) {
+  var middle = String(r[2] || '').trim();
+  return {
+    row: rowNumber,
+    lastName: String(r[0] || '').trim(),
+    firstName: String(r[1] || '').trim(),
+    middleName: normalizeMiddleName_(middle) === '' ? '' : middle,
+    birthday: normalizeDateForCompare_(r[3]),
+    status: normalizeEmployeeStatus_(r[MASTERLIST_STATUS_COL - 1]),
+    statusUpdated: String(r[MASTERLIST_STATUS_UPDATED_COL - 1] || '').trim()
+  };
+}
+
+/** True if Masterlist row `rowNumber` (1-based) in `data` still holds this last+first name — guards against rows shifted by hand edits. */
+function masterlistRowMatches_(data, rowNumber, lastName, firstName) {
+  var r = data[rowNumber - 1];
+  return !!r && rowNumber >= 2 &&
+    normalizeNameForCompare_(r[0]) === normalizeNameForCompare_(lastName) &&
+    normalizeNameForCompare_(r[1]) === normalizeNameForCompare_(firstName);
+}
+
+/** Staff-facing: every Masterlist employee row (rows with a last or first name). */
+function getEmployeeList(username, password) {
+  requireAccess_(username, password, ROLES.AUTHORIZER);
+  var data = getMasterlistData_();
+  var list = [];
+  for (var i = 1; i < data.length; i++) {
+    if (!String(data[i][0] || '').trim() && !String(data[i][1] || '').trim()) continue;
+    list.push(masterlistRowToEmployee_(data[i], i + 1));
+  }
+  return list;
+}
+
+/** Staff-facing: set one employee's status (column E) and stamp who/when (column G). */
+function setEmployeeStatus(rowNumber, lastName, firstName, status, username, password) {
+  requireAccess_(username, password, ROLES.AUTHORIZER);
+  var user = findUser_(username, password);
+  var valid = Object.keys(EMPLOYEE_STATUS).map(function (k) { return EMPLOYEE_STATUS[k]; });
+  if (valid.indexOf(status) === -1) throw new Error('Invalid status: ' + status);
+
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    var sheet = getMasterlistSheet_();
+    var data = sheet.getDataRange().getValues();
+    rowNumber = Number(rowNumber);
+    if (!masterlistRowMatches_(data, rowNumber, lastName, firstName)) {
+      throw new Error('This employee\'s row changed in the sheet. Please refresh the list and try again.');
+    }
+    var stamp = employeeAuditStamp_('Set to ' + status, user);
+    sheet.getRange(rowNumber, MASTERLIST_STATUS_COL).setValue(status);
+    sheet.getRange(rowNumber, MASTERLIST_STATUS_UPDATED_COL).setValue(stamp);
+    var row = data[rowNumber - 1].slice();
+    while (row.length < MASTERLIST_STATUS_UPDATED_COL) row.push('');
+    row[MASTERLIST_STATUS_COL - 1] = status;
+    row[MASTERLIST_STATUS_UPDATED_COL - 1] = stamp;
+    return masterlistRowToEmployee_(row, rowNumber);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * Staff-facing: add one or many employees. rows = [{lastName, firstName, middleName, birthday}].
+ * Each row is validated on its own; bad rows and duplicates (already in the Masterlist, or repeated
+ * earlier in this batch) are skipped with a reason instead of failing the batch. Good rows are
+ * written below the last employee in column A — not appendRow, which would land below the column F
+ * Branches list whenever that list is longer than the employee list.
+ * Returns {added: [employee], skipped: [{line, name, reason}]} (line = 1-based position in `rows`).
+ */
+function addEmployees(rows, username, password) {
+  requireAccess_(username, password, ROLES.AUTHORIZER);
+  var user = findUser_(username, password);
+  if (!rows || !rows.length) throw new Error('No employees to add.');
+  if (rows.length > MAX_EMPLOYEE_BATCH) throw new Error('Too many rows at once (max ' + MAX_EMPLOYEE_BATCH + ').');
+
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    var sheet = getMasterlistSheet_();
+    var data = sheet.getDataRange().getValues();
+    var seen = {};
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][0] || '').trim()) seen[employeeKey_(data[i][0], data[i][1], data[i][2], data[i][3])] = true;
+    }
+
+    var skipped = [];
+    var toWrite = [];
+    rows.forEach(function (input, idx) {
+      input = input || {};
+      var last = toProperCase_(normalizeNameForCompare_(input.lastName));
+      var first = toProperCase_(normalizeNameForCompare_(input.firstName));
+      var middleRaw = normalizeMiddleName_(input.middleName);
+      var middle = middleRaw === '' ? 'None' : toProperCase_(middleRaw);
+      var label = (last || '?') + ', ' + (first || '?');
+      var reason = '';
+      var birthday = parseBirthday_(input.birthday);
+      if (!last) reason = 'Last name is required.';
+      else if (!first) reason = 'First name is required.';
+      else if (!birthday) reason = 'Birthday is missing or not a valid past date (use yyyy-mm-dd or mm/dd/yyyy).';
+      else {
+        var key = employeeKey_(last, first, middle, birthday);
+        if (seen[key]) reason = 'Duplicate: already in the Masterlist or earlier in this list.';
+        else seen[key] = true;
+      }
+      if (reason) {
+        skipped.push({ line: idx + 1, name: label, reason: reason });
+      } else {
+        toWrite.push([last, first, middle, birthday, EMPLOYEE_STATUS.ACTIVE]);
+      }
+    });
+
+    var added = [];
+    if (toWrite.length) {
+      var lastRow = sheet.getLastRow();
+      var colA = sheet.getRange(1, 1, Math.max(lastRow, 1), 1).getValues();
+      var lastEmployeeRow = 1;
+      for (var j = colA.length - 1; j >= 0; j--) {
+        if (String(colA[j][0] || '').trim()) { lastEmployeeRow = j + 1; break; }
+      }
+      var startRow = lastEmployeeRow + 1;
+      var stamp = employeeAuditStamp_('Added', user);
+      sheet.getRange(startRow, 1, toWrite.length, 5).setValues(toWrite);
+      sheet.getRange(startRow, 4, toWrite.length, 1).setNumberFormat('yyyy-mm-dd');
+      sheet.getRange(startRow, MASTERLIST_STATUS_UPDATED_COL, toWrite.length, 1)
+        .setValues(toWrite.map(function () { return [stamp]; }));
+      toWrite.forEach(function (r, k) {
+        var full = r.concat(['', stamp]);
+        added.push(masterlistRowToEmployee_(full, startRow + k));
+      });
+    }
+    return { added: added, skipped: skipped };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * Staff-facing: delete one or many employees from the Masterlist. items = [{row, lastName, firstName}].
+ * Only the employee's own cells (A:E and G) are removed and shifted up; column F (the unrelated
+ * Branches list) is left untouched, which a whole-row deleteRow would not do. Rows are removed
+ * bottom-up so earlier deletions don't shift the row numbers of later ones. Past CA requests are kept.
+ * Returns {deleted: [{row, name}], skipped: [{row, name, reason}]}.
+ */
+function deleteEmployees(items, username, password) {
+  requireAccess_(username, password, ROLES.AUTHORIZER);
+  if (!items || !items.length) throw new Error('No employees selected.');
+
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    var sheet = getMasterlistSheet_();
+    var data = sheet.getDataRange().getValues();
+    var deleted = [];
+    var skipped = [];
+    var rowsToDelete = {};
+    items.forEach(function (it) {
+      it = it || {};
+      var rowNumber = Number(it.row);
+      var name = String(it.lastName || '') + ', ' + String(it.firstName || '');
+      if (!masterlistRowMatches_(data, rowNumber, it.lastName, it.firstName)) {
+        skipped.push({ row: rowNumber, name: name, reason: 'Row changed in the sheet. Refresh and try again.' });
+      } else if (!rowsToDelete[rowNumber]) {
+        rowsToDelete[rowNumber] = true;
+        deleted.push({ row: rowNumber, name: name });
+      }
+    });
+    Object.keys(rowsToDelete).map(Number).sort(function (a, b) { return b - a; }).forEach(function (r) {
+      sheet.getRange(r, 1, 1, MASTERLIST_STATUS_COL).deleteCells(SpreadsheetApp.Dimension.ROWS);
+      sheet.getRange(r, MASTERLIST_STATUS_UPDATED_COL).deleteCells(SpreadsheetApp.Dimension.ROWS);
+    });
+    return { deleted: deleted, skipped: skipped };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * Tags each request whose employee is currently not Active with r.employeeStatus (e.g. 'Resigned'),
+ * so staff queues can flag it. Matches on the stored Name, which is always buildFullName_() output.
+ */
+function attachEmployeeStatus_(requests) {
+  var data = getMasterlistData_();
+  var inactive = {};
+  for (var i = 1; i < data.length; i++) {
+    var status = normalizeEmployeeStatus_(data[i][MASTERLIST_STATUS_COL - 1]);
+    if (status === EMPLOYEE_STATUS.ACTIVE || !String(data[i][0] || '').trim()) continue;
+    inactive[normalizeNameForCompare_(buildFullName_(data[i][0], data[i][1], data[i][2]))] = status;
+  }
+  requests.forEach(function (r) {
+    var s = inactive[normalizeNameForCompare_(r.name)];
+    if (s) r.employeeStatus = s;
+  });
+  return requests;
 }
 
 /** Auto-capitalizes to Proper Case (first letter of each word/hyphen-part), regardless of how it was typed. */
@@ -566,9 +849,14 @@ function validateNewRequest_(data) {
     errors.push('Working days is required and must be a whole number of 0 or more.');
   }
 
-  if (data.lastName && data.firstName &&
-    !isValidEmployee_(data.lastName, data.firstName, data.middleName, data.birthday)) {
-    errors.push('Hindi ka na-verify sa aming listahan ng empleyado. Kontakin ang HR kung tama ang lahat ng detalye mo.');
+  if (data.lastName && data.firstName) {
+    var employee = findEmployee_(data.lastName, data.firstName, data.middleName, data.birthday);
+    if (!employee) {
+      errors.push('We couldn\'t verify you against our employee list. Please contact HR if all your details are correct.');
+    } else if (employee.status !== EMPLOYEE_STATUS.ACTIVE) {
+      // Resigned/Separated/On Leave: no upcoming salary to deduct the CA from.
+      errors.push(NOT_ELIGIBLE_MESSAGE);
+    }
   }
 
   if (data.lastName && data.firstName) {
@@ -764,7 +1052,7 @@ function getPendingForProcessor(username, password) {
  */
 function getProcessorQueue(username, password) {
   requireAccess_(username, password, ROLES.PROCESSOR);
-  return getAllRequests_();
+  return attachEmployeeStatus_(getAllRequests_());
 }
 
 /**
@@ -776,12 +1064,12 @@ function getProcessorQueue(username, password) {
  */
 function getApproverQueue(username, password) {
   requireAccess_(username, password, ROLES.APPROVER);
-  return getAllRequests_().filter(function (r) {
+  return attachEmployeeStatus_(getAllRequests_().filter(function (r) {
     return r.status === STATUS.PROCESSING ||
       r.status === STATUS.HOLD ||
       r.status === STATUS.APPROVED ||
       (r.status === STATUS.REJECTED && String(r.approverRemarks || '').trim() !== '');
-  });
+  }));
 }
 
 function setRowFields_(rowIndex, fields) {
@@ -973,9 +1261,9 @@ function approverReviewBatch(requestIds, action, atdCompliance, remarks, usernam
 /** Authorizer-facing: rows where Status = Approved, ready for disbursement. CSV/PDF export happens client-side from this data. */
 function getForAuthorization(username, password) {
   requireAccess_(username, password, ROLES.AUTHORIZER);
-  return getAllRequests_()
+  return attachEmployeeStatus_(getAllRequests_()
     .filter(function (r) { return r.status === STATUS.APPROVED; })
-    .sort(function (a, b) { return new Date(a.dateApproved) - new Date(b.dateApproved); });
+    .sort(function (a, b) { return new Date(a.dateApproved) - new Date(b.dateApproved); }));
 }
 
 /**

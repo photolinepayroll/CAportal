@@ -202,6 +202,20 @@
   .window-status .dot.closed { background: var(--rejected); }
   .window-panel .row-actions .btn[data-override].active { outline: 2px solid var(--ink); outline-offset: 1px; }
 
+  .badge-inactive { display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 10px; background: var(--rejected); color: #fff; font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; white-space: nowrap; }
+  .emp-status { display: inline-block; padding: 2px 8px; border-radius: 10px; font-family: var(--font-mono); font-size: 11px; white-space: nowrap; color: #fff; }
+  .emp-status.active { background: var(--approved); }
+  .emp-status.inactive { background: var(--rejected); }
+  .emp-status.leave { background: var(--pending); }
+  .emp-updated { font-family: var(--font-mono); font-size: 11px; color: var(--slate); }
+  .emp-status-edit { display: flex; gap: 6px; align-items: center; }
+  .emp-status-edit select { padding: 6px 8px; border: 1px solid var(--paper-line); background: #fff; font-size: 13px; }
+  .emp-add-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 0 16px; }
+  .emp-add-grid input { width: 100%; }
+  .emp-preview-ok { color: var(--approved); font-family: var(--font-mono); font-size: 12px; }
+  .emp-preview-bad { color: var(--rejected); font-family: var(--font-mono); font-size: 12px; }
+  #emp-add-panel textarea { min-height: 140px; font-family: var(--font-mono); font-size: 12px; }
+
   footer.ledger-footer {
     text-align: center; font-family: var(--font-mono); font-size: 11px; color: var(--slate);
     letter-spacing: 0.06em; margin-top: 40px; text-transform: uppercase;
@@ -281,6 +295,7 @@
         <div class="ledger-tab" data-view="processor">Processor <span class="lock-icon">&#128274;</span></div>
         <div class="ledger-tab" data-view="approver">Approver <span class="lock-icon">&#128274;</span></div>
         <div class="ledger-tab" data-view="authorizer">Authorizer <span class="lock-icon">&#128274;</span></div>
+        <div class="ledger-tab" data-view="employees">Employees <span class="lock-icon">&#128274;</span></div>
       </nav>
 
       <div class="ledger-card">
@@ -339,6 +354,13 @@
             </div>
             <div id="auth-history-results"></div>
           </div>
+        </section>
+
+        <!-- ===== Employees (admin + authorizer) ===== -->
+        <section class="view-panel" id="view-employees">
+          <p class="panel-title">Employees</p>
+          <p class="panel-subtitle">Masterlist: add, remove, and set who can file a cash advance</p>
+          <div id="emp-results"></div>
         </section>
 
       </div>
@@ -412,7 +434,8 @@
       // these; anything else surfaces once so a human decides whether to try again.
       var WRITE_FUNCTIONS = {
         processorReview: true, approverReview: true, processorReviewBatch: true,
-        approverReviewBatch: true, authorizeBatch: true, setCaWindowOverride: true
+        approverReviewBatch: true, authorizeBatch: true, setCaWindowOverride: true,
+        setEmployeeStatus: true, addEmployees: true, deleteEmployees: true
       };
 
       // A raw fetch() network failure (offline, DNS, connection reset/refused, blocked by an
@@ -483,6 +506,19 @@
       return '₱' + n.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     }
 
+    function escapeHtml_(value) {
+      return String(value === null || value === undefined ? '' : value)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+
+    /** Queue name cell: the name, plus a red "Inactive: <status>" badge when the employee is no longer Active. */
+    function queueNameCell_(r) {
+      return r.name + (r.employeeStatus
+        ? ' <span class="badge-inactive">Inactive: ' + escapeHtml_(r.employeeStatus) + '</span>'
+        : '');
+    }
+
     function formatDate(value) {
       if (!value) return '—';
       var d = new Date(value);
@@ -540,6 +576,7 @@
     }
 
     function canAccess(session, view) {
+      if (view === 'employees') return session.role === 'admin' || session.role === 'authorizer';
       return session.role === 'admin' || session.role === view;
     }
 
@@ -732,7 +769,7 @@
         var checked = procSelectedIds.has(r.requestId) ? ' checked' : '';
         html += '<tr>' +
           (actionable ? '<td><input type="checkbox" class="proc-row-select" data-id="' + r.requestId + '"' + checked + '></td>' : '') +
-          '<td>' + r.name + '</td>' +
+          '<td>' + queueNameCell_(r) + '</td>' +
           '<td>' + r.branch + '</td>' +
           '<td class="num">' + formatCurrency(r.amount) + '</td>' +
           '<td>' + r.cutoffPeriodLabel + '</td>' +
@@ -972,7 +1009,7 @@
         var checked = apprSelectedIds.has(r.requestId) ? ' checked' : '';
         html += '<tr>' +
           (actionable ? '<td><input type="checkbox" class="appr-row-select" data-id="' + r.requestId + '"' + checked + '></td>' : '') +
-          '<td>' + r.name + '</td>' +
+          '<td>' + queueNameCell_(r) + '</td>' +
           '<td>' + r.branch + '</td>' +
           '<td class="num">' + formatCurrency(r.amount) + '</td>' +
           '<td>' + r.cutoffPeriodLabel + '</td>' +
@@ -1195,7 +1232,7 @@
         html += '<tr>' +
           '<td><input type="checkbox" class="auth-row-select" data-id="' + r.requestId + '"' + checked + '></td>' +
           '<td class="req-id">' + r.requestId + '</td>' +
-          '<td>' + r.name + '</td>' +
+          '<td>' + queueNameCell_(r) + '</td>' +
           '<td>' + r.branch + '</td>' +
           '<td class="num">' + formatCurrency(r.amount) + '</td>' +
           '<td>' + r.cutoffPeriodLabel + '</td>' +
@@ -1532,6 +1569,435 @@
         buildSignatoryBlock_('Approved by', '') +
         '</div>';
       return html;
+    }
+
+    // ================= Employees (admin + authorizer) =================
+    var EMP_STATUSES = ['Active', 'Resigned', 'Separated', 'On Leave'];
+    var EMP_NO_MIDDLE = ['', 'none', 'n/a', 'na', 'wala', '-'];
+    var empRowsCache = [];
+    var empSelectedRows = new Set();
+    var empPasteRows = []; // last preview: [{line, lastName, firstName, middleName, birthday, error}]
+
+    viewLoaders.employees = function (session) { loadEmployees(session); };
+
+    function loadEmployees(session) {
+      var container = document.getElementById('emp-results');
+      if (!document.getElementById('emp-table-area')) {
+        container.innerHTML = '<p class="empty-state">Loading…</p>';
+      }
+      gs('getEmployeeList', session.username, session.password).then(function (rows) {
+        empRowsCache = rows || [];
+        empSelectedRows.clear();
+        if (!document.getElementById('emp-table-area')) renderEmployeesChrome(session);
+        applyEmployeeFilter(session);
+      }).catch(function (err) {
+        container.innerHTML = '<p class="empty-state">Error loading employees.</p>';
+        toast(err && err.message ? err.message : String(err), 'error');
+      });
+    }
+
+    function renderEmployeesChrome(session) {
+      document.getElementById('emp-results').innerHTML =
+        '<div class="filter-row">' +
+          '<div class="field-group">' +
+            '<label for="emp-filter">Search name</label>' +
+            '<input type="text" id="emp-filter" placeholder="Type a name…">' +
+          '</div>' +
+          '<div class="field-group">' +
+            '<label for="emp-status-filter">Filter by status</label>' +
+            '<select id="emp-status-filter">' +
+              '<option value="all">All</option>' +
+              '<option value="active">Active</option>' +
+              '<option value="inactive">Inactive (Resigned / Separated / On Leave)</option>' +
+            '</select>' +
+          '</div>' +
+        '</div>' +
+        '<div class="toolbar-row">' +
+          '<div class="row-actions">' +
+            '<button class="btn btn-outline" id="emp-refresh" type="button">Refresh</button>' +
+            '<button class="btn" id="emp-add-open" type="button">+ Add Employee</button>' +
+          '</div>' +
+          '<div class="toolbar-actions">' +
+            '<span id="emp-count"></span>' +
+            '<button class="btn btn-reject btn-outline" id="emp-delete-selected" type="button" style="display:none;">Delete Selected</button>' +
+          '</div>' +
+        '</div>' +
+        '<div class="review-inline" id="emp-add-panel">' +
+          '<div class="segmented-control">' +
+            '<button class="btn" id="emp-mode-single" type="button">Single</button>' +
+            '<button class="btn btn-outline" id="emp-mode-paste" type="button">Paste from Excel</button>' +
+          '</div>' +
+          '<div id="emp-single-section">' +
+            '<div class="emp-add-grid">' +
+              '<div class="field-group"><label for="emp-new-last">Last name</label><input type="text" id="emp-new-last"></div>' +
+              '<div class="field-group"><label for="emp-new-first">First name</label><input type="text" id="emp-new-first"></div>' +
+              '<div class="field-group"><label for="emp-new-middle">Middle name (or None)</label><input type="text" id="emp-new-middle" placeholder="None"></div>' +
+              '<div class="field-group"><label for="emp-new-birthday">Birthday</label><input type="date" id="emp-new-birthday"></div>' +
+            '</div>' +
+            '<div class="row-actions">' +
+              '<button class="btn btn-approve" id="emp-add-single" type="button">Add Employee</button>' +
+              '<button class="btn btn-outline" id="emp-add-cancel" type="button">Close</button>' +
+            '</div>' +
+          '</div>' +
+          '<div id="emp-paste-section" style="display:none;">' +
+            '<div class="field-group">' +
+              '<label for="emp-paste">Copy rows from Excel/Sheets in this column order: Last Name, First Name, Middle Name, Birthday. A header row is skipped automatically.</label>' +
+              '<textarea id="emp-paste" placeholder="Dela Cruz&#9;Juan&#9;Santos&#9;1990-03-05&#10;Reyes&#9;Maria&#9;None&#9;7/21/1995"></textarea>' +
+            '</div>' +
+            '<div class="row-actions">' +
+              '<button class="btn btn-outline" id="emp-paste-preview" type="button">Preview</button>' +
+              '<button class="btn btn-approve" id="emp-paste-add" type="button" disabled>Add employees</button>' +
+              '<button class="btn btn-outline" id="emp-paste-cancel" type="button">Close</button>' +
+            '</div>' +
+            '<div id="emp-paste-result"></div>' +
+          '</div>' +
+        '</div>' +
+        '<div id="emp-table-area"></div>';
+
+      document.getElementById('emp-filter').addEventListener('input', function () { applyEmployeeFilter(session); });
+      document.getElementById('emp-status-filter').addEventListener('change', function () { applyEmployeeFilter(session); });
+      document.getElementById('emp-refresh').addEventListener('click', function () { loadEmployees(session); });
+      document.getElementById('emp-add-open').addEventListener('click', function () {
+        document.getElementById('emp-add-panel').classList.add('show');
+      });
+      ['emp-add-cancel', 'emp-paste-cancel'].forEach(function (id) {
+        document.getElementById(id).addEventListener('click', function () {
+          document.getElementById('emp-add-panel').classList.remove('show');
+        });
+      });
+      document.getElementById('emp-mode-single').addEventListener('click', function () { setEmployeeAddMode_('single'); });
+      document.getElementById('emp-mode-paste').addEventListener('click', function () { setEmployeeAddMode_('paste'); });
+      document.getElementById('emp-add-single').addEventListener('click', function () { addSingleEmployee_(session, this); });
+      document.getElementById('emp-paste-preview').addEventListener('click', previewPastedEmployees_);
+      document.getElementById('emp-paste').addEventListener('input', function () {
+        document.getElementById('emp-paste-add').disabled = true; // preview again after editing
+      });
+      document.getElementById('emp-paste-add').addEventListener('click', function () { addPastedEmployees_(session, this); });
+      document.getElementById('emp-delete-selected').addEventListener('click', function () {
+        var items = empRowsCache.filter(function (e) { return empSelectedRows.has(e.row); });
+        deleteEmployees_(session, items, this);
+      });
+    }
+
+    function setEmployeeAddMode_(mode) {
+      var single = mode === 'single';
+      document.getElementById('emp-single-section').style.display = single ? '' : 'none';
+      document.getElementById('emp-paste-section').style.display = single ? 'none' : '';
+      document.getElementById('emp-mode-single').classList.toggle('btn-outline', !single);
+      document.getElementById('emp-mode-paste').classList.toggle('btn-outline', single);
+    }
+
+    function employeeDisplayName_(e) {
+      return e.lastName + ', ' + e.firstName + (e.middleName ? ' ' + e.middleName : '');
+    }
+
+    function formatBirthday_(ymd) {
+      var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd || '');
+      if (!m) return ymd || '—';
+      var months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      return months[Number(m[2]) - 1] + ' ' + Number(m[3]) + ', ' + m[1];
+    }
+
+    function employeeStatusPill_(status) {
+      var cls = status === 'Active' ? 'active' : (status === 'On Leave' ? 'leave' : 'inactive');
+      return '<span class="emp-status ' + cls + '">' + escapeHtml_(status) + '</span>';
+    }
+
+    function applyEmployeeFilter(session) {
+      var q = document.getElementById('emp-filter').value.trim().toLowerCase();
+      var statusValue = document.getElementById('emp-status-filter').value;
+      var filtered = empRowsCache.filter(function (e) {
+        var nameMatch = !q || employeeDisplayName_(e).toLowerCase().indexOf(q) !== -1 ||
+          (e.firstName + ' ' + e.lastName).toLowerCase().indexOf(q) !== -1;
+        var statusMatch = statusValue === 'all' ||
+          (statusValue === 'active' ? e.status === 'Active' : e.status !== 'Active');
+        return nameMatch && statusMatch;
+      });
+      var inactiveCount = empRowsCache.filter(function (e) { return e.status !== 'Active'; }).length;
+      document.getElementById('emp-count').textContent =
+        empRowsCache.length + ' employees, ' + inactiveCount + ' inactive' +
+        (filtered.length !== empRowsCache.length ? ' (' + filtered.length + ' shown)' : '');
+      renderEmployeeTable(filtered, session);
+    }
+
+    function renderEmployeeTable(rows, session) {
+      var area = document.getElementById('emp-table-area');
+      if (!rows.length) {
+        area.innerHTML = '<p class="empty-state">No employees match this view.</p>';
+        updateEmployeeDeleteButton_();
+        return;
+      }
+      var allChecked = rows.every(function (e) { return empSelectedRows.has(e.row); });
+      var html = '<div class="table-scroll"><table class="ledger-table"><thead><tr>' +
+        '<th><input type="checkbox" id="emp-select-all"' + (allChecked ? ' checked' : '') + '></th>' +
+        '<th>Name</th><th>Birthday</th><th>Status</th><th>Last updated</th><th>Change status</th><th></th>' +
+        '</tr></thead><tbody>';
+      rows.forEach(function (e) {
+        var options = EMP_STATUSES.map(function (s) {
+          return '<option value="' + s + '"' + (s === e.status ? ' selected' : '') + '>' + s + '</option>';
+        }).join('');
+        html += '<tr>' +
+          '<td><input type="checkbox" class="emp-row-select" data-row="' + e.row + '"' + (empSelectedRows.has(e.row) ? ' checked' : '') + '></td>' +
+          '<td>' + escapeHtml_(employeeDisplayName_(e)) + '</td>' +
+          '<td>' + escapeHtml_(formatBirthday_(e.birthday)) + '</td>' +
+          '<td>' + employeeStatusPill_(e.status) + '</td>' +
+          '<td class="emp-updated">' + escapeHtml_(e.statusUpdated || '—') + '</td>' +
+          '<td><div class="emp-status-edit">' +
+            '<select id="emp-status-' + e.row + '">' + options + '</select>' +
+            '<button class="btn btn-outline" data-emp-save="' + e.row + '" type="button" style="padding:6px 10px;font-size:11px;">Save</button>' +
+          '</div></td>' +
+          '<td><button class="btn btn-reject btn-outline" data-emp-delete="' + e.row + '" type="button" title="Delete from Masterlist" style="padding:6px 10px;font-size:11px;">&#128465;</button></td>' +
+          '</tr>';
+      });
+      html += '</tbody></table></div>';
+      area.innerHTML = html;
+
+      document.getElementById('emp-select-all').addEventListener('change', function () {
+        var on = this.checked;
+        rows.forEach(function (e) { if (on) empSelectedRows.add(e.row); else empSelectedRows.delete(e.row); });
+        area.querySelectorAll('.emp-row-select').forEach(function (cb) { cb.checked = on; });
+        updateEmployeeDeleteButton_();
+      });
+      area.querySelectorAll('.emp-row-select').forEach(function (cb) {
+        cb.addEventListener('change', function () {
+          var row = Number(cb.dataset.row);
+          if (cb.checked) empSelectedRows.add(row); else empSelectedRows.delete(row);
+          updateEmployeeDeleteButton_();
+        });
+      });
+      area.querySelectorAll('[data-emp-save]').forEach(function (btn) {
+        btn.addEventListener('click', function () { saveEmployeeStatus_(session, Number(btn.dataset.empSave), btn); });
+      });
+      area.querySelectorAll('[data-emp-delete]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          var row = Number(btn.dataset.empDelete);
+          deleteEmployees_(session, empRowsCache.filter(function (e) { return e.row === row; }), btn);
+        });
+      });
+      updateEmployeeDeleteButton_();
+    }
+
+    function updateEmployeeDeleteButton_() {
+      var btn = document.getElementById('emp-delete-selected');
+      if (!btn) return;
+      var n = empSelectedRows.size;
+      btn.style.display = n ? '' : 'none';
+      btn.textContent = 'Delete Selected (' + n + ')';
+    }
+
+    function findEmployeeByRow_(row) {
+      return empRowsCache.filter(function (e) { return e.row === row; })[0];
+    }
+
+    function saveEmployeeStatus_(session, row, btn) {
+      var emp = findEmployeeByRow_(row);
+      if (!emp) return;
+      var status = document.getElementById('emp-status-' + row).value;
+      if (status === emp.status) { toast('No change.', ''); return; }
+      if (status !== 'Active' &&
+        !window.confirm('Mark ' + employeeDisplayName_(emp) + ' as ' + status + '? They won\'t be able to file a cash advance.')) {
+        return;
+      }
+      btn.disabled = true;
+      gs('setEmployeeStatus', row, emp.lastName, emp.firstName, status, session.username, session.password).then(function (updated) {
+        empRowsCache = empRowsCache.map(function (e) { return e.row === row ? updated : e; });
+        toast(employeeDisplayName_(updated) + ' is now ' + updated.status + '.', 'success');
+        applyEmployeeFilter(session);
+      }).catch(function (err) {
+        btn.disabled = false;
+        toast(err && err.message ? err.message : String(err), 'error');
+      });
+    }
+
+    function deleteEmployees_(session, items, btn) {
+      if (!items.length) return;
+      var question = items.length === 1
+        ? 'Delete ' + employeeDisplayName_(items[0]) + ' from the Masterlist?'
+        : 'Delete ' + items.length + ' employees from the Masterlist?';
+      if (!window.confirm(question + ' Their past CA requests are kept. To only block someone from filing, set their status instead.')) return;
+      btn.disabled = true;
+      var payload = items.map(function (e) { return { row: e.row, lastName: e.lastName, firstName: e.firstName }; });
+      gs('deleteEmployees', payload, session.username, session.password).then(function (result) {
+        var deleted = result.deleted || [];
+        var skipped = result.skipped || [];
+        if (skipped.length) {
+          toast(deleted.length + ' deleted, ' + skipped.length + ' skipped: ' + skipped[0].reason, 'error');
+        } else {
+          toast(deleted.length + (deleted.length === 1 ? ' employee' : ' employees') + ' deleted.', 'success');
+        }
+        loadEmployees(session);
+      }).catch(function (err) {
+        btn.disabled = false;
+        toast(err && err.message ? err.message : String(err), 'error');
+      });
+    }
+
+    // --- Add: shared client-side checks (the server re-checks everything) ---
+
+    function normalizeEmpName_(v) {
+      return String(v || '').replace(/[​‌‍]/g, '').replace(/\s+/g, ' ').trim();
+    }
+
+    function normalizeEmpMiddle_(v) {
+      var s = normalizeEmpName_(v);
+      return EMP_NO_MIDDLE.indexOf(s.toLowerCase()) !== -1 ? '' : s;
+    }
+
+    /** yyyy-mm-dd, m/d/yyyy, or text like "March 5, 1990" / "5-Mar-1990" → 'yyyy-mm-dd', or '' if invalid. */
+    function parseBirthdayInput_(v) {
+      var s = String(v || '').trim();
+      var y, mo, d, m;
+      if ((m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(s))) { y = +m[1]; mo = +m[2]; d = +m[3]; }
+      else if ((m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(s))) { y = +m[3]; mo = +m[1]; d = +m[2]; }
+      else if (/[a-z]/i.test(s) && /\b\d{4}\b/.test(s)) { // text month needs a 4-digit year ("March 5" alone would guess one)
+        var t = new Date(s);
+        if (isNaN(t.getTime())) return '';
+        y = t.getFullYear(); mo = t.getMonth() + 1; d = t.getDate();
+      } else return '';
+      var dt = new Date(y, mo - 1, d);
+      if (dt.getFullYear() !== y || dt.getMonth() !== mo - 1 || dt.getDate() !== d) return '';
+      if (y < 1900 || dt > new Date()) return '';
+      return y + '-' + String(mo).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+    }
+
+    function employeeKeyClient_(last, first, middle, birthday) {
+      return [normalizeEmpName_(last).toLowerCase(), normalizeEmpName_(first).toLowerCase(),
+        normalizeEmpMiddle_(middle).toLowerCase(), birthday].join('|');
+    }
+
+    /** Checks one candidate row; `seen` holds keys of existing + earlier rows. Returns '' when OK. */
+    function checkEmployeeRow_(row, seen) {
+      if (!row.lastName) return 'Last name is required.';
+      if (!row.firstName) return 'First name is required.';
+      if (!row.birthday) return 'Birthday missing or invalid (use yyyy-mm-dd or mm/dd/yyyy).';
+      var key = employeeKeyClient_(row.lastName, row.firstName, row.middleName, row.birthday);
+      if (seen[key]) return 'Duplicate: already in the Masterlist or earlier in this list.';
+      seen[key] = true;
+      return '';
+    }
+
+    function existingEmployeeKeys_() {
+      var seen = {};
+      empRowsCache.forEach(function (e) { seen[employeeKeyClient_(e.lastName, e.firstName, e.middleName, e.birthday)] = true; });
+      return seen;
+    }
+
+    function addSingleEmployee_(session, btn) {
+      var row = {
+        lastName: normalizeEmpName_(document.getElementById('emp-new-last').value),
+        firstName: normalizeEmpName_(document.getElementById('emp-new-first').value),
+        middleName: normalizeEmpMiddle_(document.getElementById('emp-new-middle').value),
+        birthday: parseBirthdayInput_(document.getElementById('emp-new-birthday').value)
+      };
+      var error = checkEmployeeRow_(row, existingEmployeeKeys_());
+      if (error) { toast(error, 'error'); return; }
+      btn.disabled = true;
+      gs('addEmployees', [row], session.username, session.password).then(function (result) {
+        btn.disabled = false;
+        var skipped = result.skipped || [];
+        if (skipped.length) { toast(skipped[0].reason, 'error'); return; }
+        toast('Added ' + employeeDisplayName_((result.added || [])[0] || row) + '.', 'success');
+        ['emp-new-last', 'emp-new-first', 'emp-new-middle', 'emp-new-birthday'].forEach(function (id) {
+          document.getElementById(id).value = '';
+        });
+        loadEmployees(session);
+      }).catch(function (err) {
+        btn.disabled = false;
+        toast(err && err.message ? err.message : String(err), 'error');
+      });
+    }
+
+    /** Splits pasted text into rows: tab-separated (Excel/Sheets copy), or comma-separated as a fallback. */
+    function parsePastedEmployees_(text) {
+      var rows = [];
+      String(text || '').split(/\r?\n/).forEach(function (line, idx) {
+        if (!line.trim()) return;
+        var cells;
+        if (line.indexOf('\t') !== -1) {
+          cells = line.split('\t');
+        } else {
+          // Comma fallback: a birthday like "March 5, 1990" has its own comma, so rejoin anything past column 4.
+          cells = line.split(',');
+          if (cells.length > 4) cells = cells.slice(0, 3).concat([cells.slice(3).join(',')]);
+        }
+        cells = cells.map(function (c) { return c.trim(); });
+        var isHeader = rows.length === 0 && /last/i.test(cells[0] || '') && /first/i.test(cells[1] || '');
+        if (isHeader) return;
+        rows.push({
+          line: idx + 1,
+          lastName: normalizeEmpName_(cells[0]),
+          firstName: normalizeEmpName_(cells[1]),
+          middleName: normalizeEmpMiddle_(cells[2]),
+          birthdayRaw: cells[3] || '',
+          birthday: parseBirthdayInput_(cells[3])
+        });
+      });
+      var seen = existingEmployeeKeys_();
+      rows.forEach(function (r) { r.error = checkEmployeeRow_(r, seen); });
+      return rows;
+    }
+
+    function previewPastedEmployees_() {
+      empPasteRows = parsePastedEmployees_(document.getElementById('emp-paste').value);
+      var out = document.getElementById('emp-paste-result');
+      var addBtn = document.getElementById('emp-paste-add');
+      if (!empPasteRows.length) {
+        out.innerHTML = '<p class="emp-preview-bad">Nothing to add. Paste rows first.</p>';
+        addBtn.disabled = true;
+        return;
+      }
+      var okRows = empPasteRows.filter(function (r) { return !r.error; });
+      var html = '<p class="summary-total">' + okRows.length + ' ready to add, ' +
+        (empPasteRows.length - okRows.length) + ' with problems (will be skipped).</p>' +
+        '<div class="table-scroll"><table class="ledger-table"><thead><tr>' +
+        '<th>Line</th><th>Last</th><th>First</th><th>Middle</th><th>Birthday</th><th>Check</th>' +
+        '</tr></thead><tbody>';
+      empPasteRows.forEach(function (r) {
+        html += '<tr>' +
+          '<td class="num">' + r.line + '</td>' +
+          '<td>' + escapeHtml_(r.lastName) + '</td>' +
+          '<td>' + escapeHtml_(r.firstName) + '</td>' +
+          '<td>' + escapeHtml_(r.middleName || 'None') + '</td>' +
+          '<td>' + escapeHtml_(r.birthday ? formatBirthday_(r.birthday) : r.birthdayRaw) + '</td>' +
+          '<td>' + (r.error
+            ? '<span class="emp-preview-bad">' + escapeHtml_(r.error) + '</span>'
+            : '<span class="emp-preview-ok">OK</span>') + '</td>' +
+          '</tr>';
+      });
+      html += '</tbody></table></div>';
+      out.innerHTML = html;
+      addBtn.disabled = okRows.length === 0;
+      addBtn.textContent = 'Add ' + okRows.length + (okRows.length === 1 ? ' employee' : ' employees');
+    }
+
+    function addPastedEmployees_(session, btn) {
+      var okRows = empPasteRows.filter(function (r) { return !r.error; });
+      if (!okRows.length) return;
+      btn.disabled = true;
+      var payload = okRows.map(function (r) {
+        return { lastName: r.lastName, firstName: r.firstName, middleName: r.middleName, birthday: r.birthday };
+      });
+      gs('addEmployees', payload, session.username, session.password).then(function (result) {
+        var added = result.added || [];
+        var skipped = result.skipped || [];
+        var out = document.getElementById('emp-paste-result');
+        if (skipped.length) {
+          out.innerHTML = '<p class="summary-total">' + added.length + ' added. Skipped by the server:</p><ul>' +
+            skipped.map(function (s) {
+              return '<li class="emp-preview-bad">' + escapeHtml_(s.name) + ': ' + escapeHtml_(s.reason) + '</li>';
+            }).join('') + '</ul>';
+          toast(added.length + ' added, ' + skipped.length + ' skipped.', 'error');
+        } else {
+          out.innerHTML = '<p class="summary-total">' + added.length + ' added.</p>';
+          document.getElementById('emp-paste').value = '';
+          toast(added.length + (added.length === 1 ? ' employee' : ' employees') + ' added.', 'success');
+        }
+        empPasteRows = [];
+        loadEmployees(session);
+      }).catch(function (err) {
+        btn.disabled = false;
+        toast(err && err.message ? err.message : String(err), 'error');
+      });
     }
 
     document.addEventListener('DOMContentLoaded', function () {

@@ -616,8 +616,17 @@
     function verifyThenAskCaDetails() {
       showTyping();
       var a = chatState.answers;
-      gs('verifyIdentity', a.lastName, a.firstName, a.middleName, a.birthday).then(function (valid) {
+      gs('verifyIdentity', a.lastName, a.firstName, a.middleName, a.birthday).then(function (result) {
         hideTyping();
+        // {valid, eligible}; a bare boolean (older backend) means valid and eligible.
+        var valid = result && typeof result === 'object' ? !!result.valid : !!result;
+        var eligible = result && typeof result === 'object' ? !!result.eligible : !!result;
+        if (valid && !eligible) {
+          // Resigned / Separated / On Leave: no salary to deduct from. Status itself isn't disclosed.
+          addErrorBubble('You\'re not eligible to file a cash advance right now. Please contact HR.');
+          offerMenuButton();
+          return;
+        }
         if (!valid) {
           addErrorBubble('We couldn\'t verify you against our employee list. Please make sure your last name, first name, middle name, and birthday are all correct. Contact HR if all your details are already correct.');
           renderQuickReplies([

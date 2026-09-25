@@ -52,6 +52,12 @@ the bottom of `Employee.html` and `Admin.html`.
   a `Branches` reference list in column F (unrelated to the row it sits next to — just a flat
   list used to populate the searchable branch dropdown via `getBranchList()`). This is the
   identity whitelist requests are verified against before any CA details are even asked.
+  Column E = `Status` (`Active`/`Resigned`/`Separated`/`On Leave`; blank or unrecognized = Active,
+  see `normalizeEmployeeStatus_`), column G = `Status Updated` (app-written audit text). Both headers
+  self-heal in `getMasterlistSheet_()`. Managed from `Admin.html`'s **Employees** tab (see below).
+  **Never delete whole Masterlist rows in code**: column F's branch list shares those rows, so
+  `deleteEmployees` removes only `A:E` and `G` cells (shift up), and `addEmployees` writes below the
+  last non-empty cell in column A instead of using `appendRow`.
 - **`Settings`** — generic `Key | Value` store. Currently holds `CA_WINDOW_OVERRIDE`
   (`AUTO`/`FORCE_OPEN`/`FORCE_CLOSED`), `LAST_SCA_SEQUENCE` (the running counter for request IDs),
   and `LAST_BATCH_SEQUENCE` (the running counter for disbursement transaction/batch numbers).
@@ -133,7 +139,21 @@ and its client-side checks are just UX, not security)
   `toProperCase_`); there's no separate Middle Name column. `isValidEmployee_` reads `Masterlist`
   directly (deliberately **not** through `CacheService`) so hand-added rows verify immediately, and
   normalizes names first (collapses non-breaking/odd whitespace, strips zero-width chars) so rows
-  pasted from Word/Excel/PDF still match.
+  pasted from Word/Excel/PDF still match. (`findEmployee_` holds that matching logic now;
+  `isValidEmployee_` wraps it.)
+- **Inactive employees can't file**: an employee whose Masterlist status isn't `Active` (Resigned,
+  Separated, On Leave, meaning no upcoming salary to deduct the CA from) is blocked.
+  `verifyIdentity` returns `{valid, eligible}` and the chatbot shows a generic "not eligible, contact
+  HR" message (the status itself is never sent to the public page). `validateNewRequest_` re-checks
+  server-side. Already-open requests are **not** auto-changed. `attachEmployeeStatus_` adds
+  `employeeStatus` to rows from `getProcessorQueue`/`getApproverQueue`/`getForAuthorization`, and
+  `Admin.html` shows a red "Inactive: …" badge next to the name (screen only, not in exports).
+- **Employees tab** (`Admin.html`, admin + authorizer; `canAccess` special-cases the `employees`
+  view): search/filter the Masterlist, change status (`setEmployeeStatus`), add single or batch by
+  pasting rows from Excel (`addEmployees`, with a client-side preview; the server re-validates and
+  skips duplicates/bad birthdays with reasons), and delete single or checked rows (`deleteEmployees`).
+  All writes run under `LockService` and re-check that the target row still holds the expected name
+  before touching it, since staff can also edit/sort the sheet by hand. Deleting keeps past CA requests.
 - **Request ID**: `SCA#000001`-style, sequential, generated under `LockService.getScriptLock()` so
   concurrent submissions from different employees can never collide on the same number.
 - **"My Requests" self-service lookup**: requires Last Name **and** the SCA# together
