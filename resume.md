@@ -241,33 +241,27 @@ and iterating on real feedback.
 - No automated tests exist (Apps Script has no local test runner in this setup) — verification has
   been entirely manual, walking the chat flow end-to-end after each change. See the Verification
   section pattern in past plans for what to click through.
-- **Pending deploy**: everything through item 28 above (items 24–26 are `Code.gs`-only, 27 is
-  `Code.gs` + `Admin.html`, 28 is `Code.gs` + `Employee.html` + `Admin.html`; earlier ones are the Approver-Hold/Authorizer-batch feature, the
-  follow-up UI polish, `.nojekyll`, the empty-queue filter-row fix, the cutoff-period display
-  format, the `gs()` bridge hardening, and the Processor Export CSV/PDF). All of it is committed
-  and pushed to GitHub (items 25 and 28 in commit `4a558db`, 2026-09-25), but had not yet been pasted into the Apps Script editor as of this session — confirm with
-  the owner before assuming it's live. Items 22–23 are frontend-only (`Employee.html`/`Admin.html`),
-  so they don't add new deploy-together constraints beyond the ones below.
-  `Code.gs` and `Admin.html` **must** deploy together — they share the renamed
-  `getApproverQueue`/`getForAuthorization`/`authorizeBatch` function names, the `hr`→`authorizer`
-  role rename, and now the new `cutoffPeriodLabel` field (`Admin.html`'s tables/exports read it, so
-  they'd show `undefined` against an un-updated `Code.gs`). (Items 18 and 20 are `Admin.html`-only,
-  but since `Code.gs` from item 17 still isn't live either, all files still need to go up together
-  in one pass.) Two extra one-time manual steps beyond the usual paste-and-redeploy, both required
-  immediately after deploying (see `CLAUDE.md`'s Deployment section for exact steps):
+- **Deployed 2026-09-25 (version @35)**: everything through item 28 is live on the existing
+  `/exec` URL (deployment `AKfycbwdC3…`), pushed and deployed via clasp from commit `4a558db` as the
+  owner account `photoline.payroll@gmail.com`. Before this, the live editor had `Code.gs` from
+  `d2c9fec` but `Employee.html`/`Admin.html` from Aug 19 (`7daeb51`). Verified live:
+  `getCaWindowStatus` returns the new `reason` field. **Still manual, owner to confirm done:**
   1. **Roles sheet fix**: change every existing `hr` row to `authorizer` in the `Roles` tab, or that
-     account gets locked out the instant the new code goes live.
+     account is locked out now that the new code is live.
   2. **Install the time-driven trigger**: Apps Script editor → Triggers → Add Trigger →
      `autoRejectExpiredHolds_` → Time-driven → every 15 minutes → Save. Without this, Hold requests
-     will never auto-reject (everything else works fine either way).
+     never auto-reject (everything else works fine either way).
 
-## Deploy checklist after pulling changes from this repo
-1. Open the bound Sheet → Extensions → Apps Script.
-2. Paste `Code.gs`, `Employee.html`, `Admin.html`, `appsscript.json` contents into the matching
-   files in the editor (create new files there if they don't exist yet — see `CLAUDE.md` for the
-   full file list).
-3. Deploy → Manage deployments → pencil icon → **New version** → Deploy. Saving in the editor
-   alone does *not* update the live URL.
-4. If only testing frontend/JS changes (not `Code.gs`), you can skip steps 2–3 for those files and
-   just open `Employee.html`/`Admin.html` locally — the `LOCAL_WEB_APP_URL` bridge hits the
-   already-deployed backend directly.
+## Deploy checklist (clasp, set up 2026-09-25)
+`.clasp.json` (script ID) and `.claspignore` (only `Code.gs`, `Employee.html`, `Admin.html`,
+`appsscript.json` get uploaded) are in the repo root. clasp is logged in on this PC under the named
+user `owner` (= `photoline.payroll@gmail.com`, the Sheet/script owner; the default clasp user is
+`photoline.payroll20@gmail.com`, an editor). Deploy as the owner, since `executeAs: USER_DEPLOYING`.
+1. `clasp --user owner status` — confirm only those four files are listed.
+2. `clasp --user owner push --force` — uploads to the editor (not live yet).
+3. `clasp --user owner deploy -i AKfycbwdC3QF0TpRtcoHB1bTNtSHEQsgE8nR1RXUwOm95hddzON8HFObLxeRNz-XEr6MJ2IEyQ -d "<note>"`
+   — new version on the **existing** deployment, so the `/exec` URL stays the same. Don't run
+   `clasp deploy` without `-i`, that creates a second URL.
+4. Verify: POST `{"fn":"getCaWindowStatus","args":[]}` as `text/plain` to the `/exec` URL.
+5. Frontend-only tweaks can still be tested locally first via the `LOCAL_WEB_APP_URL` bridge.
+Manual paste into the editor + Manage deployments → New version still works as a fallback.

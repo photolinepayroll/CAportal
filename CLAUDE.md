@@ -178,10 +178,13 @@ null-to-`[]` guard, since it silently delivers an empty array as `null` where th
 would give an actual `[]`.
 
 ## Deployment
-No `clasp` set up — deploy by pasting file contents into the Apps Script editor (bound to the
-Sheet via Extensions → Apps Script) and creating a **New version** under Manage deployments.
-Editing files in the online editor and clicking Save does *not* update the live `/exec` URL by
-itself; a new version must be deployed.
+Deployed with `clasp` (set up 2026-09-25): `.clasp.json` holds the bound script's ID and
+`.claspignore` limits uploads to `Code.gs`, `Employee.html`, `Admin.html`, `appsscript.json`. Run as the
+owner account (`clasp --user owner …` on the owner's PC): `push --force`, then
+`deploy -i <existing deployment ID>` so the live `/exec` URL is updated in place (see resume.md's
+Deploy checklist for the exact commands). Pushing alone, like clicking Save in the online editor,
+does *not* update the live `/exec` URL; a new version must be deployed. Manual paste + Manage
+deployments → New version still works as a fallback.
 
 The Hold auto-reject feature additionally requires a **one-time manual trigger install** that
 paste-and-redeploy alone can't do: Apps Script editor → Triggers page (clock icon) → Add Trigger →
