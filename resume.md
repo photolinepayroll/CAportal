@@ -225,7 +225,7 @@ and iterating on real feedback.
     message, and `Admin.html`'s Authorizer panel shows "CLOSED (payroll dates)" and relabels Auto as
     "Auto (Mon–Wed, excl. payroll dates)". The server-side closed error in `validateNewRequest_` was
     still in Tagalog and is now English and mentions both rules. Checked with a Node harness over
-    sample dates (payroll Mon/Tue, short-month Feb 26, Thu, override cases). Not yet committed.
+    sample dates (payroll Mon/Tue, short-month Feb 26, Thu, override cases).
 
 ## Open items / not yet done
 - **Login brute-force protection**: flagged to the owner, not yet implemented. `findUser_`/`login`
@@ -244,12 +244,10 @@ and iterating on real feedback.
 - **Pending deploy**: everything through item 28 above (items 24–26 are `Code.gs`-only, 27 is
   `Code.gs` + `Admin.html`, 28 is `Code.gs` + `Employee.html` + `Admin.html`; earlier ones are the Approver-Hold/Authorizer-batch feature, the
   follow-up UI polish, `.nojekyll`, the empty-queue filter-row fix, the cutoff-period display
-  format, the `gs()` bridge hardening, and the Processor Export CSV/PDF). All of it except items 25
-  and 28 is committed and pushed to GitHub, but had not yet been pasted into the Apps Script editor as of this session — confirm with
+  format, the `gs()` bridge hardening, and the Processor Export CSV/PDF). All of it is committed
+  and pushed to GitHub (items 25 and 28 in commit `4a558db`, 2026-09-25), but had not yet been pasted into the Apps Script editor as of this session — confirm with
   the owner before assuming it's live. Items 22–23 are frontend-only (`Employee.html`/`Admin.html`),
-  so they don't add new deploy-together constraints beyond the ones below. **Items 25 (the
-  cutoff-window fix) and 28 (payroll-date closure) are uncommitted local work as of 2026-09-25.**
-  Commit and push them before deploying, or item 24's bug goes live.
+  so they don't add new deploy-together constraints beyond the ones below.
   `Code.gs` and `Admin.html` **must** deploy together — they share the renamed
   `getApproverQueue`/`getForAuthorization`/`authorizeBatch` function names, the `hr`→`authorizer`
   role rename, and now the new `cutoffPeriodLabel` field (`Admin.html`'s tables/exports read it, so
