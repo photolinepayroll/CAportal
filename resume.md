@@ -274,7 +274,8 @@ and iterating on real feedback.
     garbled box on the owner's system font. Replaced it with a solid red `btn-reject` button (no
     longer `btn-outline`, so it visually contrasts with the new "Edit" button next to it) showing a
     hand-drawn inline SVG trash icon (`EMP_TRASH_ICON`, stroke-based, not a font glyph — renders
-    consistently regardless of OS/emoji-font support) plus the word "Delete". Not yet deployed.
+    consistently regardless of OS/emoji-font support) plus the word "Delete". **Deployed
+    2026-09-26 as version @40.**
 
 ## Open items / not yet done
 - **Login brute-force protection**: flagged to the owner, not yet implemented. `findUser_`/`login`
