@@ -157,16 +157,31 @@ and its client-side checks are just UX, not security)
   Last/First/Middle Name or Date of Birth on an existing row (`editEmployee`, columns A–D only —
   never touches Status/Status Updated), add single or batch by uploading a CSV/Excel file
   (downloadable template; `.xlsx` is read client-side with SheetJS, lazy-loaded from
-  cdn.jsdelivr.net only when needed) or pasting rows (`addEmployees`, with a client-side preview;
-  the server re-validates and skips duplicates/bad birthdays with reasons), and delete single or
-  checked rows (`deleteEmployees`). All writes run under `LockService` and re-check that the target
-  row still holds the expected name before touching it, since staff can also edit/sort the sheet by
-  hand (`editEmployee` additionally excludes its own row from the duplicate-identity check).
-  Deleting keeps past CA requests. Note: `editEmployee` corrects the Masterlist going forward only —
+  cdn.jsdelivr.net only when needed) or pasting rows (`addEmployees`), delete single or checked rows
+  (`deleteEmployees`), and **Export CSV** (Name/Birthday/Status, respecting the tab's current
+  search+status filter — same convention as the Processor Queue/Authorizer exports, via
+  `empVisibleRows`). All writes run under `LockService` and re-check that the target row still
+  holds the expected name before touching it, since staff can also edit/sort the sheet by hand
+  (`editEmployee` additionally excludes its own row from the duplicate-identity check). Deleting
+  keeps past CA requests. Note: `editEmployee` corrects the Masterlist going forward only —
   `createRequest` already snapshotted the employee's name as a plain string onto any past request
   rows (see `buildFullName_`), so those aren't retroactively renamed, and `attachEmployeeStatus_`'s
   inactive-employee badge (which matches on the *current* Masterlist name) can briefly stop matching
   an older pending request of a renamed inactive employee — cosmetic only.
+- **Batch upload is an upsert, not just an add**: `addEmployees` also has a 5th, optional Status
+  column. A batch row that matches an *existing* employee updates **only that employee's Status**
+  (never Name/Middle/Birthday — use `editEmployee` for those); a row with no match is added as new
+  (Status defaults to Active if blank, as before). "Same employee" here is a deliberately **narrower**
+  key than everywhere else — Last + First + Birthday only, via `employeeMatchKey_`/
+  `employeeMatchKeyClient_` — since an external batch source's middle-name data is often
+  inconsistent. This is separate from and does not replace `employeeKey_`/`employeeKeyClient_` (the
+  full-identity key including Middle Name, still used unchanged by the single-add form and
+  `editEmployee`'s duplicate guard) — never conflate the two. A batch Status value is validated by
+  `parseBatchStatus_`/`parseBatchStatusClient_`, which are deliberately **not**
+  `normalizeEmployeeStatus_` (blank/unrecognized → Active by design, elsewhere in the codebase) — a
+  batch typo in Status must be a loud error, not a silent Active. `addEmployees` returns
+  `{added, updated, unchanged, skipped}` (kept the function name; still "process a batch of employee
+  rows," now upsert instead of insert-only).
 - **Request ID**: `SCA#000001`-style, sequential, generated under `LockService.getScriptLock()` so
   concurrent submissions from different employees can never collide on the same number.
 - **"My Requests" self-service lookup**: requires Last Name **and** the SCA# together

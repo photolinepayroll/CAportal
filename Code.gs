@@ -236,6 +236,22 @@ function normalizeEmployeeStatus_(value) {
 }
 
 /**
+ * Strict Status parser for BATCH UPLOAD ONLY — unlike normalizeEmployeeStatus_ (blank/unrecognized
+ * -> Active by design), a typo here must be a loud error. Returns {value: ''} for blank/whitespace
+ * ("no status given"), {value: 'Active'|'Resigned'|'Separated'|'On Leave'} for a recognized value
+ * (case/whitespace-insensitive), or {error: '...'} for anything else.
+ */
+function parseBatchStatus_(value) {
+  var v = String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  if (!v) return { value: '' };
+  var keys = Object.keys(EMPLOYEE_STATUS);
+  for (var i = 0; i < keys.length; i++) {
+    if (EMPLOYEE_STATUS[keys[i]].toLowerCase() === v) return { value: EMPLOYEE_STATUS[keys[i]] };
+  }
+  return { error: 'Unrecognized Status "' + String(value).trim() + '" (use Active, Resigned, Separated, or On Leave).' };
+}
+
+/**
  * Collapses non-breaking/odd Unicode spaces and zero-width characters down to plain spaces, then
  * trims/lowercases — copy-pasting a name into the Masterlist (from Word, Excel, a PDF, etc.) often
  * carries a non-breaking space or zero-width character that looks identical to a normal space but
@@ -406,6 +422,18 @@ function employeeKey_(lastName, firstName, middleName, birthday) {
     normalizeMiddleName_(middleName), normalizeDateForCompare_(birthday)].join('|');
 }
 
+/**
+ * Narrower match key than employeeKey_ — Last+First+Birthday only, deliberately ignoring Middle
+ * Name. Used ONLY by the batch-upload upsert (addEmployees) to decide "is this the same employee
+ * already in the Masterlist" — an external source list's middle-name data is often inconsistent.
+ * Must NOT replace employeeKey_ for the full-identity duplicate check used by the single-add form
+ * and editEmployee, which intentionally still include Middle Name.
+ */
+function employeeMatchKey_(lastName, firstName, birthday) {
+  return [normalizeNameForCompare_(lastName), normalizeNameForCompare_(firstName),
+    normalizeDateForCompare_(birthday)].join('|');
+}
+
 function employeeAuditStamp_(verb, user) {
   return verb + ' ' + Utilities.formatDate(new Date(), 'Asia/Manila', 'yyyy-MM-dd HH:mm') +
     ' by ' + (user && (user.name || user.username) || 'unknown');
@@ -531,12 +559,22 @@ function editEmployee(rowNumber, oldLastName, oldFirstName, newLastName, newFirs
 }
 
 /**
- * Staff-facing: add one or many employees. rows = [{lastName, firstName, middleName, birthday}].
- * Each row is validated on its own; bad rows and duplicates (already in the Masterlist, or repeated
- * earlier in this batch) are skipped with a reason instead of failing the batch. Good rows are
- * written below the last employee in column A — not appendRow, which would land below the column F
- * Branches list whenever that list is longer than the employee list.
- * Returns {added: [employee], skipped: [{line, name, reason}]} (line = 1-based position in `rows`).
+ * Staff-facing: add-or-update-status a batch of employees. rows = [{lastName, firstName,
+ * middleName, birthday, status}] (status optional). Each row is validated independently:
+ *  - No existing-employee match (by Last+First+Birthday, see employeeMatchKey_) -> added as new,
+ *    using its Status if valid, else defaulting to Active (same as before this feature).
+ *  - Matches an existing employee + gives a valid Status -> ONLY that employee's Status (+ audit
+ *    stamp) is updated; Name/Middle/Birthday are never touched by a batch (see editEmployee for
+ *    that). Reported under `updated`, not `added`.
+ *  - Matches an existing employee + Status is blank -> no write; reported under `unchanged` with
+ *    an informational reason (not an error, not an add).
+ *  - Status is non-blank but not a recognized value -> row error, skipped, for both new and
+ *    matched rows (see parseBatchStatus_ — unlike normalizeEmployeeStatus_, a typo here must not
+ *    silently default to Active).
+ *  - Two rows in the same batch resolving to the same employee (existing OR new) -> the second is
+ *    skipped as a within-batch duplicate.
+ * Returns {added: [employee], updated: [employee], unchanged: [{line, name, reason}],
+ * skipped: [{line, name, reason}]} (line = 1-based position in `rows`).
  */
 function addEmployees(rows, username, password) {
   requireAccess_(username, password, ROLES.AUTHORIZER);
@@ -549,13 +587,17 @@ function addEmployees(rows, username, password) {
   try {
     var sheet = getMasterlistSheet_();
     var data = sheet.getDataRange().getValues();
-    var seen = {};
+    var matchIndex = {};
     for (var i = 1; i < data.length; i++) {
-      if (String(data[i][0] || '').trim()) seen[employeeKey_(data[i][0], data[i][1], data[i][2], data[i][3])] = true;
+      if (String(data[i][0] || '').trim()) matchIndex[employeeMatchKey_(data[i][0], data[i][1], data[i][3])] = i + 1;
     }
 
     var skipped = [];
+    var unchanged = [];
+    var updates = [];
     var toWrite = [];
+    var batchSeenNew = {};
+    var batchSeenUpdateRows = {};
     rows.forEach(function (input, idx) {
       input = input || {};
       var last = toProperCase_(normalizeNameForCompare_(input.lastName));
@@ -563,20 +605,42 @@ function addEmployees(rows, username, password) {
       var middleRaw = normalizeMiddleName_(input.middleName);
       var middle = middleRaw === '' ? 'None' : toProperCase_(middleRaw);
       var label = (last || '?') + ', ' + (first || '?');
-      var reason = '';
       var birthday = parseBirthday_(input.birthday);
+      var reason = '';
       if (!last) reason = 'Last name is required.';
       else if (!first) reason = 'First name is required.';
       else if (!birthday) reason = 'Birthday is missing or not a valid past date (use yyyy-mm-dd or mm/dd/yyyy).';
-      else {
-        var key = employeeKey_(last, first, middle, birthday);
-        if (seen[key]) reason = 'Duplicate: already in the Masterlist or earlier in this list.';
-        else seen[key] = true;
-      }
       if (reason) {
         skipped.push({ line: idx + 1, name: label, reason: reason });
+        return;
+      }
+
+      var status = parseBatchStatus_(input.status);
+      if (status.error) {
+        skipped.push({ line: idx + 1, name: label, reason: status.error });
+        return;
+      }
+
+      var mkey = employeeMatchKey_(last, first, birthday);
+      var existingRow = matchIndex[mkey];
+      if (existingRow) {
+        if (batchSeenUpdateRows[existingRow]) {
+          skipped.push({ line: idx + 1, name: label, reason: 'Duplicate: another row in this batch already matched this same existing employee.' });
+          return;
+        }
+        batchSeenUpdateRows[existingRow] = true;
+        if (status.value === '') {
+          unchanged.push({ line: idx + 1, name: label, reason: 'Already exists — no status given, no change.' });
+        } else {
+          updates.push({ row: existingRow, status: status.value });
+        }
       } else {
-        toWrite.push([last, first, middle, birthday, EMPLOYEE_STATUS.ACTIVE]);
+        if (batchSeenNew[mkey]) {
+          skipped.push({ line: idx + 1, name: label, reason: 'Duplicate: already added earlier in this list.' });
+          return;
+        }
+        batchSeenNew[mkey] = true;
+        toWrite.push([last, first, middle, birthday, status.value || EMPLOYEE_STATUS.ACTIVE]);
       }
     });
 
@@ -599,7 +663,23 @@ function addEmployees(rows, username, password) {
         added.push(masterlistRowToEmployee_(full, startRow + k));
       });
     }
-    return { added: added, skipped: skipped };
+
+    // Safe to index into the original `data` snapshot here: new rows are always appended below
+    // the last existing employee row (never inserted above), so an existing row's number is never
+    // shifted by this same batch's inserts above.
+    var updated = [];
+    updates.forEach(function (u) {
+      var stamp = employeeAuditStamp_('Set to ' + u.status + ' (batch)', user);
+      sheet.getRange(u.row, MASTERLIST_STATUS_COL).setValue(u.status);
+      sheet.getRange(u.row, MASTERLIST_STATUS_UPDATED_COL).setValue(stamp);
+      var row = data[u.row - 1].slice();
+      while (row.length < MASTERLIST_STATUS_UPDATED_COL) row.push('');
+      row[MASTERLIST_STATUS_COL - 1] = u.status;
+      row[MASTERLIST_STATUS_UPDATED_COL - 1] = stamp;
+      updated.push(masterlistRowToEmployee_(row, u.row));
+    });
+
+    return { added: added, updated: updated, unchanged: unchanged, skipped: skipped };
   } finally {
     lock.releaseLock();
   }

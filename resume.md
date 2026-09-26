@@ -1,7 +1,8 @@
 # Resume Notes — CA Portal
 
 Last updated: 2026-09-26 (Employees tab "Edit" action deployed as v@38; CSV export UTF-8/BOM fix
-deployed as v@39; Delete button icon/styling redesign). Read `CLAUDE.md` first for how the system works; this file is about
+deployed as v@39; Delete button redesign deployed as v@40; Employees Export CSV + batch upload
+Status upsert, not yet deployed). Read `CLAUDE.md` first for how the system works; this file is about
 **where things stand** and **what's left to do**.
 
 ## Current state
@@ -276,6 +277,62 @@ and iterating on real feedback.
     hand-drawn inline SVG trash icon (`EMP_TRASH_ICON`, stroke-based, not a font glyph — renders
     consistently regardless of OS/emoji-font support) plus the word "Delete". **Deployed
     2026-09-26 as version @40.**
+33. Employees tab: Export CSV + batch upload becomes a Status upsert (`Code.gs` + `Admin.html`,
+    owner request 2026-09-26):
+    - New **Export CSV** button (toolbar, next to +Add Employee) exports Name/Birthday/Status for
+      whatever the current search+status filter is showing (`empVisibleRows`, mirroring
+      `procVisibleRows`'s pattern) — same "respects the current filter" convention as every other
+      export in the app, with the same UTF-8 BOM fix from item 31.
+    - The batch upload (CSV/Excel/paste) gains a 5th **Status** column. Re-uploading a batch that
+      matches an *existing* employee now **updates only that employee's Status** instead of being
+      rejected as a duplicate — meant for maintaining a recurring external list (e.g. "who
+      resigned this month") and re-uploading it repeatedly, instead of using the single-row status
+      dropdown one employee at a time. Name/Middle/Birthday on an existing employee are **never**
+      touched by a batch (that's what `editEmployee`, item 30, is for).
+    - "Same employee" for this batch-matching purpose is a new, narrower key — Last + First +
+      Birthday, deliberately **ignoring Middle Name** — since an external source list's middle-name
+      data is often inconsistent. New `employeeMatchKey_`/`employeeMatchKeyClient_` implement this;
+      they are separate from and do not replace `employeeKey_`/`employeeKeyClient_` (the existing
+      full-identity key, still used unchanged by the single-add form and `editEmployee`'s duplicate
+      guard).
+    - New `parseBatchStatus_`/`parseBatchStatusClient_` strictly validate a batch row's Status
+      (`Active`/`Resigned`/`Separated`/`On Leave`, case/whitespace-insensitive) and are deliberately
+      **not** the same as `normalizeEmployeeStatus_` (which treats blank/unrecognized as Active by
+      design, so a typo elsewhere in the sheet can never lock someone out) — a batch typo like
+      "Resignd" must be a loud, visible error instead of silently defaulting to Active.
+    - `addEmployees` (kept the name; still fundamentally "process a batch of employee rows," now
+      upsert instead of insert-only) returns `{added, updated, unchanged, skipped}` instead of
+      `{added, skipped}` — `addSingleEmployee_` and `addPastedEmployees_` in `Admin.html` were
+      updated for the new shape. Notably, `addSingleEmployee_` (the single-employee form) now also
+      has to handle the `unchanged` bucket: since it reuses `addEmployees` under the hood, trying to
+      single-add an employee that already matches an existing one by Last+First+Birthday (even
+      under a different Middle Name) now lands in `unchanged` rather than actually adding a second
+      row — surfaced as an error toast instead of a false "Added" success message.
+    - Batch preview (`renderEmployeePreview_`) is now a 3-way classification per row — **Add**,
+      **Update status → X**, or an error — computed client-side via new `classifyBatchEmployeeRow_`
+      (UX only; the server re-validates and is authoritative, per this tab's existing convention).
+      `checkEmployeeRow_`/`existingEmployeeKeys_` (full-identity, used by single-add/`editEmployee`)
+      were deliberately left untouched rather than parameterized, to keep their semantics simple
+      and impossible to accidentally break for those other call sites.
+    - Fixed a real bug the new Status column would otherwise have introduced: the comma-separated
+      paste fallback (`parsePastedEmployees_`, for text not copied as tab-separated from Excel)
+      previously rejoined anything past column 3 back into the birthday field whenever a raw split
+      produced more than 4 cells — assuming exactly 4 logical columns. With Status now a legitimate
+      5th column, a normal 5-cell row would have been wrongly mangled (birthday and status merged
+      into one field). Fixed to only rejoin when there are more than 5 cells, treating the *last*
+      cell as Status and everything from column 4 up to the second-to-last cell as the birthday.
+      Known remaining limitation (documented in the UI, not fully solvable): a comma-pasted birthday
+      containing its own comma with *no* Status typed is indistinguishable from a real 5-column row
+      and will still misparse — the format-instructions text now tells staff to use tab-paste
+      (copy from Excel) or file upload in that case, which is unaffected by any of this. The 5-cell
+      exact-column, 4-cell no-status, and 6+-cell embedded-comma-with-status cases were all verified
+      by hand against representative inputs.
+    - Verified with a Node harness against a fake sheet (new employee with/without Status, matched
+      employee + valid Status, matched employee + blank Status producing zero writes and a
+      byte-identical row, invalid Status on both new and matched rows, two new rows sharing a match
+      key, two rows matching the same existing employee producing exactly one write) — all pass,
+      plus the existing item-30 `editEmployee` harness re-run to confirm no regression. Not yet
+      deployed — needs the usual clasp push + deploy (see Deploy checklist below).
 
 ## Open items / not yet done
 - **Login brute-force protection**: flagged to the owner, not yet implemented. `findUser_`/`login`

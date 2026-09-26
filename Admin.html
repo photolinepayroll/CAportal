@@ -214,6 +214,7 @@
   .emp-add-grid input { width: 100%; }
   .emp-preview-ok { color: var(--approved); font-family: var(--font-mono); font-size: 12px; }
   .emp-preview-bad { color: var(--rejected); font-family: var(--font-mono); font-size: 12px; }
+  .emp-preview-update { color: var(--pending); font-family: var(--font-mono); font-size: 12px; }
   #emp-add-panel textarea { min-height: 140px; font-family: var(--font-mono); font-size: 12px; }
   .emp-upload-step { margin-bottom: 18px; }
   .emp-step-title { font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; margin: 0 0 8px; }
@@ -1593,6 +1594,7 @@
     var EMP_STATUSES = ['Active', 'Resigned', 'Separated', 'On Leave'];
     var EMP_NO_MIDDLE = ['', 'none', 'n/a', 'na', 'wala', '-'];
     var empRowsCache = [];
+    var empVisibleRows = [];
     var empSelectedRows = new Set();
     var empPasteRows = []; // last preview: [{line, lastName, firstName, middleName, birthday, error}]
 
@@ -1634,6 +1636,7 @@
           '<div class="row-actions">' +
             '<button class="btn btn-outline" id="emp-refresh" type="button">Refresh</button>' +
             '<button class="btn" id="emp-add-open" type="button">+ Add Employee</button>' +
+            '<button class="btn btn-outline" id="emp-export-csv" type="button">Export CSV</button>' +
           '</div>' +
           '<div class="toolbar-actions">' +
             '<span id="emp-count"></span>' +
@@ -1665,13 +1668,16 @@
                 '<button class="btn btn-outline" id="emp-template-csv" type="button">Download CSV template</button>' +
               '</div>' +
               '<table class="emp-format-table"><thead><tr>' +
-                '<th>Last Name</th><th>First Name</th><th>Middle Name</th><th>Birthday</th>' +
+                '<th>Last Name</th><th>First Name</th><th>Middle Name</th><th>Birthday</th><th>Status</th>' +
               '</tr></thead><tbody>' +
-                '<tr><td>Dela Cruz</td><td>Juan</td><td>Santos</td><td>1990-03-05</td></tr>' +
-                '<tr><td>Reyes</td><td>Maria</td><td>None</td><td>07/21/1995</td></tr>' +
+                '<tr><td>Dela Cruz</td><td>Juan</td><td>Santos</td><td>1990-03-05</td><td>Active</td></tr>' +
+                '<tr><td>Reyes</td><td>Maria</td><td>None</td><td>07/21/1995</td><td></td></tr>' +
               '</tbody></table>' +
               '<p class="emp-format-note">Keep the columns in this order. Keep the header row. Write <strong>None</strong> if there is no middle name. ' +
-                'Birthday as <strong>yyyy-mm-dd</strong> or <strong>mm/dd/yyyy</strong> (Excel date cells are fine). Only the first sheet is read.</p>' +
+                'Birthday as <strong>yyyy-mm-dd</strong> or <strong>mm/dd/yyyy</strong> (Excel date cells are fine). Only the first sheet is read. ' +
+                'Status is optional — leave blank to default to Active for new employees, or leave an existing employee unchanged. ' +
+                'If given, it must be Active, Resigned, Separated, or On Leave. A row that matches an existing employee ' +
+                '(by Last Name + First Name + Birthday) only ever updates that employee\'s Status — never their name.</p>' +
             '</div>' +
             '<div class="emp-upload-step">' +
               '<p class="emp-step-title">2. Upload the filled-in file</p>' +
@@ -1679,7 +1685,7 @@
               '<span id="emp-file-name" class="emp-format-note"></span>' +
             '</div>' +
             '<details class="emp-paste-alt"><summary>Or paste rows copied from Excel instead</summary>' +
-              '<textarea id="emp-paste" placeholder="Dela Cruz&#9;Juan&#9;Santos&#9;1990-03-05&#10;Reyes&#9;Maria&#9;None&#9;07/21/1995"></textarea>' +
+              '<textarea id="emp-paste" placeholder="Dela Cruz&#9;Juan&#9;Santos&#9;1990-03-05&#9;Active&#10;Reyes&#9;Maria&#9;None&#9;07/21/1995"></textarea>' +
               '<button class="btn btn-outline" id="emp-paste-preview" type="button">Preview pasted rows</button>' +
             '</details>' +
             '<p class="emp-step-title">3. Check the preview, then add</p>' +
@@ -1695,6 +1701,7 @@
       document.getElementById('emp-filter').addEventListener('input', function () { applyEmployeeFilter(session); });
       document.getElementById('emp-status-filter').addEventListener('change', function () { applyEmployeeFilter(session); });
       document.getElementById('emp-refresh').addEventListener('click', function () { loadEmployees(session); });
+      document.getElementById('emp-export-csv').addEventListener('click', exportEmployeesCsv_);
       document.getElementById('emp-add-open').addEventListener('click', function () {
         document.getElementById('emp-add-panel').classList.add('show');
       });
@@ -1764,6 +1771,7 @@
     }
 
     function renderEmployeeTable(rows, session) {
+      empVisibleRows = rows;
       var area = document.getElementById('emp-table-area');
       if (!rows.length) {
         area.innerHTML = '<p class="empty-state">No employees match this view.</p>';
@@ -1861,6 +1869,24 @@
 
     function findEmployeeByRow_(row) {
       return empRowsCache.filter(function (e) { return e.row === row; })[0];
+    }
+
+    function exportEmployeesCsv_() {
+      if (!empVisibleRows.length) { toast('Nothing to export.', 'error'); return; }
+      var headers = ['Name', 'Birthday', 'Status'];
+      var lines = [headers.join(',')];
+      empVisibleRows.forEach(function (e) {
+        lines.push([employeeDisplayName_(e), formatBirthday_(e.birthday), e.status].map(toCsvValue).join(','));
+      });
+      var blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = 'ca-employees-' + new Date().toISOString().slice(0, 10) + '.csv';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
     }
 
     function saveEmployeeStatus_(session, row, btn) {
@@ -1972,6 +1998,23 @@
         normalizeEmpMiddle_(middle).toLowerCase(), birthday].join('|');
     }
 
+    /** Narrower client-side match key mirroring Code.gs's employeeMatchKey_ — Last+First+Birthday only. */
+    function employeeMatchKeyClient_(last, first, birthday) {
+      return [normalizeEmpName_(last).toLowerCase(), normalizeEmpName_(first).toLowerCase(), birthday].join('|');
+    }
+
+    var EMP_VALID_STATUSES = ['Active', 'Resigned', 'Separated', 'On Leave'];
+
+    /** Mirrors Code.gs's parseBatchStatus_ for preview only — server re-validates and is authoritative. */
+    function parseBatchStatusClient_(v) {
+      var s = String(v || '').trim();
+      if (!s) return { value: '' };
+      var low = s.toLowerCase().replace(/\s+/g, ' ');
+      var match = EMP_VALID_STATUSES.filter(function (x) { return x.toLowerCase() === low; })[0];
+      if (match) return { value: match };
+      return { error: 'Unrecognized Status "' + s + '" (use Active, Resigned, Separated, or On Leave).' };
+    }
+
     /** Checks one candidate row; `seen` holds keys of existing + earlier rows. Returns '' when OK. */
     function checkEmployeeRow_(row, seen) {
       if (!row.lastName) return 'Last name is required.';
@@ -1989,6 +2032,33 @@
       return seen;
     }
 
+    /**
+     * Classifies one batch-preview row as add/update/unchanged/error, using the narrower
+     * Last+First+Birthday match key — separate from checkEmployeeRow_, which single-add/
+     * editEmployee still use with the full-identity key. matchIndex/batchSeenNew/
+     * batchSeenUpdateRows are built once per preview render (see renderEmployeePreview_).
+     */
+    function classifyBatchEmployeeRow_(row, matchIndex, batchSeenNew, batchSeenUpdateRows) {
+      if (!row.lastName) return { kind: 'error', message: 'Last name is required.' };
+      if (!row.firstName) return { kind: 'error', message: 'First name is required.' };
+      if (!row.birthday) return { kind: 'error', message: 'Birthday missing or invalid (use yyyy-mm-dd or mm/dd/yyyy).' };
+      var parsed = parseBatchStatusClient_(row.statusRaw);
+      if (parsed.error) return { kind: 'error', message: parsed.error };
+      var mkey = employeeMatchKeyClient_(row.lastName, row.firstName, row.birthday);
+      var existingRow = matchIndex[mkey];
+      if (existingRow) {
+        if (batchSeenUpdateRows[existingRow]) {
+          return { kind: 'error', message: 'Duplicate: another row in this batch already matched this same existing employee.' };
+        }
+        batchSeenUpdateRows[existingRow] = true;
+        if (parsed.value === '') return { kind: 'unchanged', message: 'Already exists — no status given, no change.' };
+        return { kind: 'update', status: parsed.value };
+      }
+      if (batchSeenNew[mkey]) return { kind: 'error', message: 'Duplicate: already added earlier in this list.' };
+      batchSeenNew[mkey] = true;
+      return { kind: 'add', status: parsed.value || 'Active' };
+    }
+
     function addSingleEmployee_(session, btn) {
       var row = {
         lastName: normalizeEmpName_(document.getElementById('emp-new-last').value),
@@ -2002,7 +2072,12 @@
       gs('addEmployees', [row], session.username, session.password).then(function (result) {
         btn.disabled = false;
         var skipped = result.skipped || [];
+        var unchanged = result.unchanged || [];
         if (skipped.length) { toast(skipped[0].reason, 'error'); return; }
+        if (unchanged.length) {
+          toast('Already in the Masterlist (matching Last, First, and Birthday) — nothing added.', 'error');
+          return;
+        }
         toast('Added ' + employeeDisplayName_((result.added || [])[0] || row) + '.', 'success');
         ['emp-new-last', 'emp-new-first', 'emp-new-middle', 'emp-new-birthday'].forEach(function (id) {
           document.getElementById(id).value = '';
@@ -2015,8 +2090,9 @@
     }
 
     /**
-     * [{line, cells: [last, first, middle, birthday]}] → checked employee rows. Blank lines and a
-     * leading header row are skipped. Used by paste, CSV upload, and Excel upload alike.
+     * [{line, cells: [last, first, middle, birthday, status]}] → raw parsed rows (not yet
+     * classified — see classifyBatchEmployeeRow_, called from renderEmployeePreview_). Blank lines
+     * and a leading header row are skipped. Used by paste, CSV upload, and Excel upload alike.
      */
     function cellsToEmployeeRows_(lines) {
       var rows = [];
@@ -2031,11 +2107,10 @@
           firstName: normalizeEmpName_(cells[1]),
           middleName: normalizeEmpMiddle_(cells[2]),
           birthdayRaw: cells[3] || '',
-          birthday: parseBirthdayInput_(cells[3])
+          birthday: parseBirthdayInput_(cells[3]),
+          statusRaw: cells[4] || ''
         });
       });
-      var seen = existingEmployeeKeys_();
-      rows.forEach(function (r) { r.error = checkEmployeeRow_(r, seen); });
       return rows;
     }
 
@@ -2047,9 +2122,14 @@
         if (line.indexOf('\t') !== -1) {
           cells = line.split('\t');
         } else {
-          // Comma fallback: a birthday like "March 5, 1990" has its own comma, so rejoin anything past column 4.
+          // Comma fallback: a birthday like "March 5, 1990" has its own comma, so rejoin anything
+          // past column 4 back into the birthday field — but only past 5 columns now that Status
+          // is a real 5th column; Last/First/Middle and the fixed-vocabulary Status never contain
+          // commas, so any extra commas beyond 5 columns are assumed to belong to the birthday.
           cells = line.split(',');
-          if (cells.length > 4) cells = cells.slice(0, 3).concat([cells.slice(3).join(',')]);
+          if (cells.length > 5) {
+            cells = cells.slice(0, 3).concat([cells.slice(3, cells.length - 1).join(','), cells[cells.length - 1]]);
+          }
         }
         lines.push({ line: idx + 1, cells: cells });
       });
@@ -2155,9 +2235,9 @@
     }
 
     var EMP_TEMPLATE_ROWS = [
-      ['Last Name', 'First Name', 'Middle Name', 'Birthday'],
-      ['Dela Cruz', 'Juan', 'Santos', '1990-03-05'],
-      ['Reyes', 'Maria', 'None', '07/21/1995']
+      ['Last Name', 'First Name', 'Middle Name', 'Birthday', 'Status'],
+      ['Dela Cruz', 'Juan', 'Santos', '1990-03-05', 'Active'],
+      ['Reyes', 'Maria', 'None', '07/21/1995', '']
     ];
 
     function downloadBlob_(blob, filename) {
@@ -2182,7 +2262,7 @@
       loadSheetJs_().then(function (XLSX) {
         btn.disabled = false;
         var ws = XLSX.utils.aoa_to_sheet(EMP_TEMPLATE_ROWS);
-        ws['!cols'] = [{ wch: 18 }, { wch: 18 }, { wch: 18 }, { wch: 14 }];
+        ws['!cols'] = [{ wch: 18 }, { wch: 18 }, { wch: 18 }, { wch: 14 }, { wch: 12 }];
         var wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, 'Employees');
         XLSX.writeFile(wb, 'employee-upload-template.xlsx');
@@ -2206,53 +2286,70 @@
         addBtn.textContent = 'Add employees';
         return;
       }
-      var okRows = empPasteRows.filter(function (r) { return !r.error; });
-      var html = '<p class="summary-total">' + okRows.length + ' ready to add, ' +
-        (empPasteRows.length - okRows.length) + ' with problems (will be skipped).</p>' +
+      var matchIndex = {};
+      empRowsCache.forEach(function (e) { matchIndex[employeeMatchKeyClient_(e.lastName, e.firstName, e.birthday)] = e.row; });
+      var batchSeenNew = {};
+      var batchSeenUpdateRows = {};
+      empPasteRows.forEach(function (r) {
+        r.classification = classifyBatchEmployeeRow_(r, matchIndex, batchSeenNew, batchSeenUpdateRows);
+      });
+      var addCount = empPasteRows.filter(function (r) { return r.classification.kind === 'add'; }).length;
+      var updateCount = empPasteRows.filter(function (r) { return r.classification.kind === 'update'; }).length;
+      var unchangedCount = empPasteRows.filter(function (r) { return r.classification.kind === 'unchanged'; }).length;
+      var errorCount = empPasteRows.filter(function (r) { return r.classification.kind === 'error'; }).length;
+      var html = '<p class="summary-total">' + addCount + ' to add, ' + updateCount + ' to update, ' +
+        unchangedCount + ' unchanged, ' + errorCount + ' with problems (will be skipped).</p>' +
         '<div class="table-scroll"><table class="ledger-table"><thead><tr>' +
-        '<th>Line</th><th>Last</th><th>First</th><th>Middle</th><th>Birthday</th><th>Check</th>' +
+        '<th>Line</th><th>Last</th><th>First</th><th>Middle</th><th>Birthday</th><th>Status</th><th>Check</th>' +
         '</tr></thead><tbody>';
       empPasteRows.forEach(function (r) {
+        var c = r.classification;
+        var checkHtml = c.kind === 'error' ? '<span class="emp-preview-bad">' + escapeHtml_(c.message) + '</span>'
+          : c.kind === 'update' ? '<span class="emp-preview-update">Update status &rarr; ' + escapeHtml_(c.status) + '</span>'
+          : c.kind === 'unchanged' ? '<span class="emp-preview-update">' + escapeHtml_(c.message) + '</span>'
+          : '<span class="emp-preview-ok">Add (' + escapeHtml_(c.status) + ')</span>';
         html += '<tr>' +
           '<td class="num">' + r.line + '</td>' +
           '<td>' + escapeHtml_(r.lastName) + '</td>' +
           '<td>' + escapeHtml_(r.firstName) + '</td>' +
           '<td>' + escapeHtml_(r.middleName || 'None') + '</td>' +
           '<td>' + escapeHtml_(r.birthday ? formatBirthday_(r.birthday) : r.birthdayRaw) + '</td>' +
-          '<td>' + (r.error
-            ? '<span class="emp-preview-bad">' + escapeHtml_(r.error) + '</span>'
-            : '<span class="emp-preview-ok">OK</span>') + '</td>' +
+          '<td>' + escapeHtml_(r.statusRaw || '—') + '</td>' +
+          '<td>' + checkHtml + '</td>' +
           '</tr>';
       });
       html += '</tbody></table></div>';
       out.innerHTML = html;
-      addBtn.disabled = okRows.length === 0;
-      addBtn.textContent = 'Add ' + okRows.length + (okRows.length === 1 ? ' employee' : ' employees');
+      var total = addCount + updateCount;
+      addBtn.disabled = total === 0;
+      addBtn.textContent = 'Process ' + total + (total === 1 ? ' row' : ' rows');
     }
 
     function addPastedEmployees_(session, btn) {
-      var okRows = empPasteRows.filter(function (r) { return !r.error; });
+      var okRows = empPasteRows.filter(function (r) { return r.classification.kind === 'add' || r.classification.kind === 'update'; });
       if (!okRows.length) return;
       btn.disabled = true;
       var payload = okRows.map(function (r) {
-        return { lastName: r.lastName, firstName: r.firstName, middleName: r.middleName, birthday: r.birthday };
+        return { lastName: r.lastName, firstName: r.firstName, middleName: r.middleName, birthday: r.birthday, status: r.classification.status };
       });
       gs('addEmployees', payload, session.username, session.password).then(function (result) {
         var added = result.added || [];
+        var updated = result.updated || [];
         var skipped = result.skipped || [];
         var out = document.getElementById('emp-paste-result');
+        var summary = added.length + ' added, ' + updated.length + ' updated' + (skipped.length ? ', ' + skipped.length + ' skipped.' : '.');
         if (skipped.length) {
-          out.innerHTML = '<p class="summary-total">' + added.length + ' added. Skipped by the server:</p><ul>' +
+          out.innerHTML = '<p class="summary-total">' + summary + ' Skipped by the server:</p><ul>' +
             skipped.map(function (s) {
               return '<li class="emp-preview-bad">' + escapeHtml_(s.name) + ': ' + escapeHtml_(s.reason) + '</li>';
             }).join('') + '</ul>';
-          toast(added.length + ' added, ' + skipped.length + ' skipped.', 'error');
+          toast(summary, 'error');
         } else {
-          out.innerHTML = '<p class="summary-total">' + added.length + ' added.</p>';
+          out.innerHTML = '<p class="summary-total">' + summary + '</p>';
           document.getElementById('emp-paste').value = '';
           document.getElementById('emp-file').value = '';
           document.getElementById('emp-file-name').textContent = '';
-          toast(added.length + (added.length === 1 ? ' employee' : ' employees') + ' added.', 'success');
+          toast(summary, 'success');
         }
         empPasteRows = [];
         loadEmployees(session);
