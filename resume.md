@@ -2,7 +2,7 @@
 
 Last updated: 2026-09-26 (Employees tab "Edit" action deployed as v@38; CSV export UTF-8/BOM fix
 deployed as v@39; Delete button redesign deployed as v@40; Employees Export CSV + batch upload
-Status upsert, not yet deployed). Read `CLAUDE.md` first for how the system works; this file is about
+Status upsert deployed as v@41). Read `CLAUDE.md` first for how the system works; this file is about
 **where things stand** and **what's left to do**.
 
 ## Current state
@@ -331,8 +331,8 @@ and iterating on real feedback.
       employee + valid Status, matched employee + blank Status producing zero writes and a
       byte-identical row, invalid Status on both new and matched rows, two new rows sharing a match
       key, two rows matching the same existing employee producing exactly one write) — all pass,
-      plus the existing item-30 `editEmployee` harness re-run to confirm no regression. Not yet
-      deployed — needs the usual clasp push + deploy (see Deploy checklist below).
+      plus the existing item-30 `editEmployee` harness re-run to confirm no regression. **Deployed
+      2026-09-26 as version @41** on the existing `/exec` URL — live and verified.
 
 ## Open items / not yet done
 - **Login brute-force protection**: flagged to the owner, not yet implemented. `findUser_`/`login`
