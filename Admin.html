@@ -1582,6 +1582,14 @@
     }
 
     // ================= Employees (admin + authorizer) =================
+    // Inline SVG (not an emoji glyph) so the delete icon renders consistently across fonts/OSes.
+    var EMP_TRASH_ICON = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+      'stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:none;">' +
+      '<polyline points="3 6 5 6 21 6"></polyline>' +
+      '<path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path>' +
+      '<path d="M10 11v6"></path><path d="M14 11v6"></path>' +
+      '<path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"></path>' +
+      '</svg>';
     var EMP_STATUSES = ['Active', 'Resigned', 'Separated', 'On Leave'];
     var EMP_NO_MIDDLE = ['', 'none', 'n/a', 'na', 'wala', '-'];
     var empRowsCache = [];
@@ -1783,7 +1791,7 @@
           '</div></td>' +
           '<td>' +
             '<button class="btn btn-outline" data-emp-edit="' + e.row + '" type="button" title="Edit name/birthday" style="padding:6px 10px;font-size:11px;">Edit</button> ' +
-            '<button class="btn btn-reject btn-outline" data-emp-delete="' + e.row + '" type="button" title="Delete from Masterlist" style="padding:6px 10px;font-size:11px;">&#128465;</button>' +
+            '<button class="btn btn-reject" data-emp-delete="' + e.row + '" type="button" title="Delete from Masterlist" style="padding:6px 10px;font-size:11px;display:inline-flex;align-items:center;gap:5px;">' + EMP_TRASH_ICON + 'Delete</button>' +
           '</td>' +
           '</tr>' +
           '<tr class="emp-edit-row"><td colspan="7" style="padding:0; border-bottom:none;">' +

@@ -1,6 +1,7 @@
 # Resume Notes — CA Portal
 
-Last updated: 2026-09-26 (Employees tab "Edit" action for correcting Masterlist name/birthday typos, deployed as v@38). Read `CLAUDE.md` first for how the system works; this file is about
+Last updated: 2026-09-26 (Employees tab "Edit" action deployed as v@38; CSV export UTF-8/BOM fix
+deployed as v@39; Delete button icon/styling redesign). Read `CLAUDE.md` first for how the system works; this file is about
 **where things stand** and **what's left to do**.
 
 ## Current state
@@ -262,6 +263,18 @@ and iterating on real feedback.
     stale-row guard, duplicate-exclude-self, validation failures, middle-name normalization,
     role gate). **Deployed 2026-09-26 as version @38** on the existing `/exec` URL — live and
     verified (`getCaWindowStatus` responds correctly post-deploy).
+31. Fixed mangled accented characters (e.g. `ñ`) in CSV exports (`Admin.html`, frontend-only):
+    the Authorizer "For Authorization", Processor Queue, and per-batch Transaction History CSV
+    exports were all missing the UTF-8 BOM prefix that the employee-upload template CSV already
+    had, so Excel guessed ANSI/Windows-1252 and showed garbled characters instead of opening the
+    file as UTF-8. All three now get the same `'﻿' + ...` prefix; `toCsvValue`'s
+    comma/quote-escaping logic is untouched. **Deployed 2026-09-26 as version @39.**
+32. Redesigned the Employees tab's per-row Delete button (`Admin.html`, frontend-only): the old
+    thin red-outline button used the `&#128465;` (🗑️) emoji glyph, which rendered as an illegible
+    garbled box on the owner's system font. Replaced it with a solid red `btn-reject` button (no
+    longer `btn-outline`, so it visually contrasts with the new "Edit" button next to it) showing a
+    hand-drawn inline SVG trash icon (`EMP_TRASH_ICON`, stroke-based, not a font glyph — renders
+    consistently regardless of OS/emoji-font support) plus the word "Delete". Not yet deployed.
 
 ## Open items / not yet done
 - **Login brute-force protection**: flagged to the owner, not yet implemented. `findUser_`/`login`

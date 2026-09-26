@@ -115,6 +115,10 @@ and its client-side checks are just UX, not security)
   reviewing away from the screen, and the PDF footer has two blank signatory lines, "Prepared by" /
   "Checked by" (vs. the Authorizer PDF's three). Both exports respect the tab's current status/name/branch
   filter, not the full unfiltered queue.
+- **CSV export encoding**: every CSV `Blob` in `Admin.html` (Authorizer, Processor Queue, per-batch
+  Transaction History, employee-upload template) is prefixed with a UTF-8 BOM (`'﻿' + ...`) so
+  Excel opens it as UTF-8 instead of guessing ANSI/Windows-1252 and mangling accented characters
+  (e.g. `ñ`). Keep this prefix on any new CSV export added later.
 - **Processor status filter**: the Processor tab mirrors the Approver tab's three filters (status,
   name, branch). `getProcessorQueue` returns every request and `Admin.html` buckets them client-side
   (`procStatusBucket_`): **Pending** (actionable, the default), **Forwarded** (anything past the
