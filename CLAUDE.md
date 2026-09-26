@@ -149,13 +149,20 @@ and its client-side checks are just UX, not security)
   `employeeStatus` to rows from `getProcessorQueue`/`getApproverQueue`/`getForAuthorization`, and
   `Admin.html` shows a red "Inactive: …" badge next to the name (screen only, not in exports).
 - **Employees tab** (`Admin.html`, admin + authorizer; `canAccess` special-cases the `employees`
-  view): search/filter the Masterlist, change status (`setEmployeeStatus`), add single or batch by
-  uploading a CSV/Excel file (downloadable template; `.xlsx` is read client-side with SheetJS,
-  lazy-loaded from cdn.jsdelivr.net only when needed) or pasting rows (`addEmployees`, with a
-  client-side preview; the server re-validates and
-  skips duplicates/bad birthdays with reasons), and delete single or checked rows (`deleteEmployees`).
-  All writes run under `LockService` and re-check that the target row still holds the expected name
-  before touching it, since staff can also edit/sort the sheet by hand. Deleting keeps past CA requests.
+  view): search/filter the Masterlist, change status (`setEmployeeStatus`), edit a wrong
+  Last/First/Middle Name or Date of Birth on an existing row (`editEmployee`, columns A–D only —
+  never touches Status/Status Updated), add single or batch by uploading a CSV/Excel file
+  (downloadable template; `.xlsx` is read client-side with SheetJS, lazy-loaded from
+  cdn.jsdelivr.net only when needed) or pasting rows (`addEmployees`, with a client-side preview;
+  the server re-validates and skips duplicates/bad birthdays with reasons), and delete single or
+  checked rows (`deleteEmployees`). All writes run under `LockService` and re-check that the target
+  row still holds the expected name before touching it, since staff can also edit/sort the sheet by
+  hand (`editEmployee` additionally excludes its own row from the duplicate-identity check).
+  Deleting keeps past CA requests. Note: `editEmployee` corrects the Masterlist going forward only —
+  `createRequest` already snapshotted the employee's name as a plain string onto any past request
+  rows (see `buildFullName_`), so those aren't retroactively renamed, and `attachEmployeeStatus_`'s
+  inactive-employee badge (which matches on the *current* Masterlist name) can briefly stop matching
+  an older pending request of a renamed inactive employee — cosmetic only.
 - **Request ID**: `SCA#000001`-style, sequential, generated under `LockService.getScriptLock()` so
   concurrent submissions from different employees can never collide on the same number.
 - **"My Requests" self-service lookup**: requires Last Name **and** the SCA# together

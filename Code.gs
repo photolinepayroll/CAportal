@@ -36,6 +36,7 @@ function doPost(e) {
     getBranchList: getBranchList,
     getEmployeeList: getEmployeeList,
     setEmployeeStatus: setEmployeeStatus,
+    editEmployee: editEmployee,
     addEmployees: addEmployees,
     deleteEmployees: deleteEmployees
   };
@@ -467,6 +468,62 @@ function setEmployeeStatus(rowNumber, lastName, firstName, status, username, pas
     while (row.length < MASTERLIST_STATUS_UPDATED_COL) row.push('');
     row[MASTERLIST_STATUS_COL - 1] = status;
     row[MASTERLIST_STATUS_UPDATED_COL - 1] = stamp;
+    return masterlistRowToEmployee_(row, rowNumber);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * Staff-facing: correct a wrong Last/First/Middle Name or Date of Birth on an existing Masterlist
+ * row. Old last/first name are required to guard against the row having shifted since the client
+ * fetched the list (same masterlistRowMatches_ check as setEmployeeStatus/deleteEmployees). Only
+ * columns A-D are touched; Status (E) and Status Updated (G) are left as-is — this is an identity
+ * correction, not a status change.
+ * Note: request rows in Form Responses 1 store the employee's name as a plain string snapshot at
+ * submission time (see buildFullName_/createRequest) and are never retroactively updated, so an
+ * inactive employee's older pending request may briefly stop showing its "Inactive" badge
+ * (attachEmployeeStatus_ matches on current Masterlist name) after a name correction. Cosmetic only.
+ */
+function editEmployee(rowNumber, oldLastName, oldFirstName, newLastName, newFirstName, newMiddleName, newBirthday, username, password) {
+  requireAccess_(username, password, ROLES.AUTHORIZER);
+  rowNumber = Number(rowNumber);
+
+  var last = toProperCase_(normalizeNameForCompare_(newLastName));
+  var first = toProperCase_(normalizeNameForCompare_(newFirstName));
+  var middleRaw = normalizeMiddleName_(newMiddleName);
+  var middle = middleRaw === '' ? 'None' : toProperCase_(middleRaw);
+  var birthday = parseBirthday_(newBirthday);
+  if (!last) throw new Error('Last name is required.');
+  if (!first) throw new Error('First name is required.');
+  if (!birthday) throw new Error('Birthday is missing or not a valid past date (use yyyy-mm-dd or mm/dd/yyyy).');
+
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    var sheet = getMasterlistSheet_();
+    var data = sheet.getDataRange().getValues();
+    if (!masterlistRowMatches_(data, rowNumber, oldLastName, oldFirstName)) {
+      throw new Error('This employee\'s row changed in the sheet. Please refresh the list and try again.');
+    }
+
+    var seen = {};
+    for (var i = 1; i < data.length; i++) {
+      if (i + 1 === rowNumber) continue;
+      if (String(data[i][0] || '').trim()) seen[employeeKey_(data[i][0], data[i][1], data[i][2], data[i][3])] = true;
+    }
+    var key = employeeKey_(last, first, middle, birthday);
+    if (seen[key]) throw new Error('Another employee already has this exact Last/First/Middle name and birthday.');
+
+    sheet.getRange(rowNumber, 1, 1, 4).setValues([[last, first, middle, birthday]]);
+    sheet.getRange(rowNumber, 4, 1, 1).setNumberFormat('yyyy-mm-dd');
+
+    var row = data[rowNumber - 1].slice();
+    while (row.length < MASTERLIST_STATUS_UPDATED_COL) row.push('');
+    row[0] = last;
+    row[1] = first;
+    row[2] = middle;
+    row[3] = birthday;
     return masterlistRowToEmployee_(row, rowNumber);
   } finally {
     lock.releaseLock();

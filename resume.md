@@ -1,6 +1,6 @@
 # Resume Notes — CA Portal
 
-Last updated: 2026-09-25 (cutoff-window fix, Masterlist verification fixes, Processor status filter). Read `CLAUDE.md` first for how the system works; this file is about
+Last updated: 2026-09-26 (Employees tab "Edit" action for correcting Masterlist name/birthday typos, deployed as v@38). Read `CLAUDE.md` first for how the system works; this file is about
 **where things stand** and **what's left to do**.
 
 ## Current state
@@ -243,6 +243,25 @@ and iterating on real feedback.
     - Checked with a Node harness running the real `Code.gs` against a fake sheet (add incl.
       duplicates/bad dates, status, eligibility, badge matching, batch delete with a stale row,
       branch list unchanged) and a test of the paste parser.
+
+30. Added an "Edit" action to the Employees tab (`Admin.html` + `Code.gs`) so staff can correct a
+    wrong Last/First/Middle Name or Date of Birth on an existing Masterlist row, instead of having
+    to delete and re-add it (which would lose Status/Status Updated history). New `editEmployee`
+    in `Code.gs` mirrors `setEmployeeStatus`'s lock → re-read → `masterlistRowMatches_` stale-row
+    guard → write pattern, validates/normalizes the same way `addEmployees` does, and checks for
+    duplicate identity against every *other* row (excluding the row being edited). Only columns
+    A–D are touched — Status (E) and Status Updated (G) are left alone, since an identity
+    correction isn't a status change. `Admin.html` adds an inline per-row "Edit" form (same
+    `.review-inline`/`.emp-add-grid` convention as the add-employee panel and the Processor
+    "Confirm Forward" amount edit), updating `empRowsCache` in place on save (no full reload).
+    Note: request rows in `Form Responses 1` store the employee's name as a frozen string snapshot
+    at submission time and are never retroactively updated, so renaming an inactive employee could
+    make an older *pending* request of theirs briefly stop showing its "Inactive" badge
+    (`attachEmployeeStatus_` matches against the *current* Masterlist name) — cosmetic only, not a
+    data or processing issue. Verified with a Node harness against a fake sheet (happy path,
+    stale-row guard, duplicate-exclude-self, validation failures, middle-name normalization,
+    role gate). **Deployed 2026-09-26 as version @38** on the existing `/exec` URL — live and
+    verified (`getCaWindowStatus` responds correctly post-deploy).
 
 ## Open items / not yet done
 - **Login brute-force protection**: flagged to the owner, not yet implemented. `findUser_`/`login`

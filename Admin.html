@@ -445,7 +445,7 @@
       var WRITE_FUNCTIONS = {
         processorReview: true, approverReview: true, processorReviewBatch: true,
         approverReviewBatch: true, authorizeBatch: true, setCaWindowOverride: true,
-        setEmployeeStatus: true, addEmployees: true, deleteEmployees: true
+        setEmployeeStatus: true, editEmployee: true, addEmployees: true, deleteEmployees: true
       };
 
       // A raw fetch() network failure (offline, DNS, connection reset/refused, blocked by an
@@ -1781,8 +1781,25 @@
             '<select id="emp-status-' + e.row + '">' + options + '</select>' +
             '<button class="btn btn-outline" data-emp-save="' + e.row + '" type="button" style="padding:6px 10px;font-size:11px;">Save</button>' +
           '</div></td>' +
-          '<td><button class="btn btn-reject btn-outline" data-emp-delete="' + e.row + '" type="button" title="Delete from Masterlist" style="padding:6px 10px;font-size:11px;">&#128465;</button></td>' +
-          '</tr>';
+          '<td>' +
+            '<button class="btn btn-outline" data-emp-edit="' + e.row + '" type="button" title="Edit name/birthday" style="padding:6px 10px;font-size:11px;">Edit</button> ' +
+            '<button class="btn btn-reject btn-outline" data-emp-delete="' + e.row + '" type="button" title="Delete from Masterlist" style="padding:6px 10px;font-size:11px;">&#128465;</button>' +
+          '</td>' +
+          '</tr>' +
+          '<tr class="emp-edit-row"><td colspan="7" style="padding:0; border-bottom:none;">' +
+            '<div class="review-inline" id="emp-edit-panel-' + e.row + '">' +
+              '<div class="emp-add-grid">' +
+                '<div class="field-group"><label for="emp-edit-last-' + e.row + '">Last name</label><input type="text" id="emp-edit-last-' + e.row + '" value="' + escapeHtml_(e.lastName) + '"></div>' +
+                '<div class="field-group"><label for="emp-edit-first-' + e.row + '">First name</label><input type="text" id="emp-edit-first-' + e.row + '" value="' + escapeHtml_(e.firstName) + '"></div>' +
+                '<div class="field-group"><label for="emp-edit-middle-' + e.row + '">Middle name (or None)</label><input type="text" id="emp-edit-middle-' + e.row + '" value="' + escapeHtml_(e.middleName || 'None') + '"></div>' +
+                '<div class="field-group"><label for="emp-edit-birthday-' + e.row + '">Birthday</label><input type="date" id="emp-edit-birthday-' + e.row + '" value="' + escapeHtml_(e.birthday) + '"></div>' +
+              '</div>' +
+              '<div class="row-actions">' +
+                '<button class="btn btn-approve" data-emp-edit-save="' + e.row + '" type="button">Save changes</button>' +
+                '<button class="btn btn-outline" data-emp-edit-cancel="' + e.row + '" type="button">Cancel</button>' +
+              '</div>' +
+            '</div>' +
+          '</td></tr>';
       });
       html += '</tbody></table></div>';
       area.innerHTML = html;
@@ -1809,7 +1826,21 @@
           deleteEmployees_(session, empRowsCache.filter(function (e) { return e.row === row; }), btn);
         });
       });
+      area.querySelectorAll('[data-emp-edit]').forEach(function (btn) {
+        btn.addEventListener('click', function () { toggleEmployeeEditRow_(Number(btn.dataset.empEdit)); });
+      });
+      area.querySelectorAll('[data-emp-edit-cancel]').forEach(function (btn) {
+        btn.addEventListener('click', function () { toggleEmployeeEditRow_(Number(btn.dataset.empEditCancel)); });
+      });
+      area.querySelectorAll('[data-emp-edit-save]').forEach(function (btn) {
+        btn.addEventListener('click', function () { saveEmployeeEdit_(session, Number(btn.dataset.empEditSave), btn); });
+      });
       updateEmployeeDeleteButton_();
+    }
+
+    function toggleEmployeeEditRow_(row) {
+      var panel = document.getElementById('emp-edit-panel-' + row);
+      if (panel) panel.classList.toggle('show');
     }
 
     function updateEmployeeDeleteButton_() {
@@ -1837,6 +1868,39 @@
       gs('setEmployeeStatus', row, emp.lastName, emp.firstName, status, session.username, session.password).then(function (updated) {
         empRowsCache = empRowsCache.map(function (e) { return e.row === row ? updated : e; });
         toast(employeeDisplayName_(updated) + ' is now ' + updated.status + '.', 'success');
+        applyEmployeeFilter(session);
+      }).catch(function (err) {
+        btn.disabled = false;
+        toast(err && err.message ? err.message : String(err), 'error');
+      });
+    }
+
+    function saveEmployeeEdit_(session, row, btn) {
+      var emp = findEmployeeByRow_(row);
+      if (!emp) return;
+      var candidate = {
+        lastName: normalizeEmpName_(document.getElementById('emp-edit-last-' + row).value),
+        firstName: normalizeEmpName_(document.getElementById('emp-edit-first-' + row).value),
+        middleName: normalizeEmpMiddle_(document.getElementById('emp-edit-middle-' + row).value),
+        birthday: parseBirthdayInput_(document.getElementById('emp-edit-birthday-' + row).value)
+      };
+      var seen = {};
+      empRowsCache.forEach(function (e) {
+        if (e.row !== row) seen[employeeKeyClient_(e.lastName, e.firstName, e.middleName, e.birthday)] = true;
+      });
+      var error = checkEmployeeRow_(candidate, seen);
+      if (error) { toast(error, 'error'); return; }
+      if (candidate.lastName === emp.lastName && candidate.firstName === emp.firstName &&
+        candidate.middleName === emp.middleName && candidate.birthday === emp.birthday) {
+        toast('No change.', '');
+        return;
+      }
+      btn.disabled = true;
+      gs('editEmployee', row, emp.lastName, emp.firstName,
+        candidate.lastName, candidate.firstName, candidate.middleName, candidate.birthday,
+        session.username, session.password).then(function (updated) {
+        empRowsCache = empRowsCache.map(function (e) { return e.row === row ? updated : e; });
+        toast(employeeDisplayName_(updated) + ' updated.', 'success');
         applyEmployeeFilter(session);
       }).catch(function (err) {
         btn.disabled = false;
