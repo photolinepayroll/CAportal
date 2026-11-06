@@ -1,6 +1,6 @@
 # Resume Notes — CA Portal
 
-Last updated: 2026-11-06 (item 34, Approver amount edit, on main; Apps Script deploy pending) / 2026-09-26 (Employees tab "Edit" action deployed as v@38; CSV export UTF-8/BOM fix
+Last updated: 2026-11-06 (items 34–35, Approver amount edit + Save, on main; Apps Script deploy pending) / 2026-09-26 (Employees tab "Edit" action deployed as v@38; CSV export UTF-8/BOM fix
 deployed as v@39; Delete button redesign deployed as v@40; Employees Export CSV + batch upload
 Status upsert deployed as v@41). Read `CLAUDE.md` first for how the system works; this file is about
 **where things stand** and **what's left to do**.
@@ -348,7 +348,7 @@ and iterating on real feedback.
     `APPROVER_REMARKS`, replaced not stacked on repeat saves; no-op if unchanged), whitelisted in
     `doPost` and `WRITE_FUNCTIONS`. The Review panel's amount dropdown has a Save button; the queue
     reloads and the panel re-opens so the Approver can then approve. Item 34's approve-time pass-through
-    is kept. Node-harness verified. **Not yet deployed** — deploy `Code.gs` first (Save calls a new function).
+    is kept. Node-harness verified. Pushed to `main` 2026-11-06 (GitHub Pages mirror updated). **Apps Script not yet deployed** — owner must run the clasp push + `deploy -i` (Deploy checklist); until then the Save button errors against the old backend.
 
 ## Open items / not yet done
 - **Login brute-force protection**: flagged to the owner, not yet implemented. `findUser_`/`login`
