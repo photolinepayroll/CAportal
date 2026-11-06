@@ -1032,6 +1032,10 @@
               '<button class="btn btn-approve btn-outline" data-open="' + r.requestId + '">Review</button>' +
             '</div>' +
             '<div class="review-inline" id="appr-inline-' + r.requestId + '">' +
+              '<div class="field-group">' +
+                '<label for="appr-amount-' + r.requestId + '">Amount (edit before approving if needed)</label>' +
+                '<select id="appr-amount-' + r.requestId + '">' + buildAmountOptions_(r.amount) + '</select>' +
+              '</div>' +
               '<label class="atd-toggle"><input type="checkbox" id="appr-atd-' + r.requestId + '"> ATD Compliant (per auditor)</label>' +
               '<textarea placeholder="Remarks" id="appr-remarks-' + r.requestId + '"></textarea>' +
               '<div class="row-actions">' +
@@ -1071,7 +1075,8 @@
           var atd = document.getElementById('appr-atd-' + id).checked;
           if (action === 'reject' && !remarks) { toast('Remarks are required to reject.', 'error'); return; }
           btn.disabled = true;
-          gs('approverReview', id, action, atd, remarks, session.username, session.password).then(function () {
+          var newAmount = document.getElementById('appr-amount-' + id).value;
+          gs('approverReview', id, action, atd, remarks, newAmount, session.username, session.password).then(function () {
             var verb = action === 'approve' ? 'Request approved and forwarded to Authorizer.' : action === 'hold' ? 'Request placed on hold.' : 'Request rejected.';
             toast(verb, 'success');
             loadApproverQueue(session);

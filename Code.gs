@@ -1264,8 +1264,10 @@ function processorReview(requestId, action, remarks, newAmount, username, passwo
  * 'hold' (Processing -> Hold only — buying time, not a decision, so no ATD/remarks requirement).
  * A Held request can still be approved or rejected at any time before the auto-reject trigger
  * catches it past the Wed-11am deadline (see autoRejectExpiredHolds_).
+ * newAmount (only consulted when action === 'approve'): the Approver's corrected CA amount. Must be
+ * one of CA_AMOUNTS; if it differs, it is written and an audit note is prepended to APPROVER_REMARKS.
  */
-function approverReview(requestId, action, atdCompliance, remarks, username, password) {
+function approverReview(requestId, action, atdCompliance, remarks, newAmount, username, password) {
   requireAccess_(username, password, ROLES.APPROVER);
   var req = findRequestByIdOrThrow_(requestId);
   if (action === 'hold') {
@@ -1280,13 +1282,27 @@ function approverReview(requestId, action, atdCompliance, remarks, username, pas
   }
 
   if (action === 'approve') {
-    setRowFields_(req.rowIndex, {
+    var approveFields = {
       STATUS: STATUS.APPROVED,
       ATD_COMPLIANCE: atdCompliance ? 'Yes' : 'No',
       APPROVER_REMARKS: remarks || '',
       DATE_APPROVED: new Date(),
       FORWARDED_TO_HR: 'Yes'
-    });
+    };
+    if (newAmount !== undefined && newAmount !== null && newAmount !== '') {
+      var amt = Number(newAmount);
+      if (CA_AMOUNTS.indexOf(amt) === -1) {
+        throw new Error('Amount must be one of: ' + CA_AMOUNTS.join(', ') + '.');
+      }
+      if (amt !== Number(req.amount)) {
+        approveFields.AMOUNT = amt;
+        approveFields.APPROVER_REMARKS = (
+          'Amount corrected from ₱' + req.amount + ' to ₱' + amt + '.' +
+          (remarks ? ' ' + remarks : '')
+        ).trim();
+      }
+    }
+    setRowFields_(req.rowIndex, approveFields);
   } else if (action === 'hold') {
     setRowFields_(req.rowIndex, {
       STATUS: STATUS.HOLD,

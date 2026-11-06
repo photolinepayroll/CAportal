@@ -334,6 +334,13 @@ and iterating on real feedback.
       plus the existing item-30 `editEmployee` harness re-run to confirm no regression. **Deployed
       2026-09-26 as version @41** on the existing `/exec` URL — live and verified.
 
+34. Approver can correct the CA amount before approving (`Code.gs` + `Admin.html`, owner request
+    2026-11-06): `approverReview` gained a `newAmount` param (before `username, password`), mirroring
+    item 13. Same `CA_AMOUNTS` re-validation, applied only on single-row approve (not hold/reject/batch),
+    audit note "Amount corrected from ₱X to ₱Y." prepended to `APPROVER_REMARKS`. The Approver's inline
+    Review panel has an amount dropdown (`appr-amount-<id>`, reuses `buildAmountOptions_`).
+    **Not yet deployed** — `Code.gs` and `Admin.html` must deploy together (changed argument order).
+
 ## Open items / not yet done
 - **Login brute-force protection**: flagged to the owner, not yet implemented. `findUser_`/`login`
   has no rate limiting or lockout — credentials are guessable given enough attempts. Owner hadn't
