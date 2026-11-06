@@ -73,7 +73,9 @@ and its client-side checks are just UX, not security)
   ₱X to ₱Y.") is auto-prepended to `PROCESSOR_REMARKS` so the Approver/HR can see the correction.
   The Approver can do the same via `approverReview`'s `newAmount` param: same enum re-validation,
   only applied on single-row `action === 'approve'` (never hold/reject/batch), with the audit note
-  prepended to `APPROVER_REMARKS` so the Authorizer sees it.
+  prepended to `APPROVER_REMARKS` so the Authorizer sees it. The Approver can also **Save** a
+  correction on its own before deciding (`approverSaveAmount`: Processing/Hold only, status unchanged,
+  audit note replaces any earlier "Amount corrected…" prefix instead of stacking).
 - **CA window**: normally open Monday–Wednesday only (`isCaWindowOpen_`/`getCaWindowState_`,
   Asia/Manila), **and** closed on payroll dates even when they fall on Mon–Wed: the 11th–15th and
   the 26th–end of month (`CA_PAYROLL_BLACKOUT_RANGES`). `getCaWindowStatus()` returns a `reason`

@@ -342,6 +342,13 @@ and iterating on real feedback.
     Committed and pushed to `main` 2026-11-06 (GitHub Pages mirror updated). **Apps Script not yet deployed** — owner must run the clasp
     push + `deploy -i` from the Deploy checklist; `Code.gs` and `Admin.html` must go live together (changed
     argument order), and the Approver's approve action fails against the old backend until then.
+35. Approver **Save** button for the amount (`Code.gs` + `Admin.html`, owner request 2026-11-06): new
+    `approverSaveAmount(requestId, newAmount, username, password)` stores a `CA_AMOUNTS`-validated
+    correction on a Processing/Hold request without changing its status (audit note in
+    `APPROVER_REMARKS`, replaced not stacked on repeat saves; no-op if unchanged), whitelisted in
+    `doPost` and `WRITE_FUNCTIONS`. The Review panel's amount dropdown has a Save button; the queue
+    reloads and the panel re-opens so the Approver can then approve. Item 34's approve-time pass-through
+    is kept. Node-harness verified. **Not yet deployed** — deploy `Code.gs` first (Save calls a new function).
 
 ## Open items / not yet done
 - **Login brute-force protection**: flagged to the owner, not yet implemented. `findUser_`/`login`

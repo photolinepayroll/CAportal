@@ -28,6 +28,7 @@ function doPost(e) {
     getTransactionHistory: getTransactionHistory,
     processorReview: processorReview,
     approverReview: approverReview,
+    approverSaveAmount: approverSaveAmount,
     processorReviewBatch: processorReviewBatch,
     approverReviewBatch: approverReviewBatch,
     getCaWindowStatus: getCaWindowStatus,
@@ -1357,6 +1358,41 @@ function processorReviewBatch(requestIds, action, remarks, username, password) {
   }
 
   return { succeeded: succeeded, failed: failed };
+}
+
+/**
+ * Approver saves a corrected CA amount on a Processing/Hold request WITHOUT deciding it (status
+ * unchanged), so the correction is stored before the approve/hold/reject step. newAmount must be one
+ * of CA_AMOUNTS. If it differs, AMOUNT is written and an audit note replaces any earlier
+ * "Amount corrected…" prefix on APPROVER_REMARKS (so repeated saves don't stack).
+ * Returns { success, changed, amount }.
+ */
+function approverSaveAmount(requestId, newAmount, username, password) {
+  requireAccess_(username, password, ROLES.APPROVER);
+  var amt = Number(newAmount);
+  if (CA_AMOUNTS.indexOf(amt) === -1) {
+    throw new Error('Amount must be one of: ' + CA_AMOUNTS.join(', ') + '.');
+  }
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    var req = findRequestByIdOrThrow_(requestId);
+    if (req.status !== STATUS.PROCESSING && req.status !== STATUS.HOLD) {
+      throw new Error('Request is not in Processing or Hold status.');
+    }
+    if (amt === Number(req.amount)) {
+      return { success: true, changed: false, amount: amt };
+    }
+    var rest = String(req.approverRemarks || '').replace(/^Amount corrected from ₱\S+ to ₱\S+\.\s*/, '');
+    setRowFields_(req.rowIndex, {
+      AMOUNT: amt,
+      APPROVER_REMARKS: ('Amount corrected from ₱' + req.amount + ' to ₱' + amt + '. ' + rest).trim()
+    });
+    cacheInvalidate_(CACHE_KEYS.REQUESTS);
+    return { success: true, changed: true, amount: amt };
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 /**

@@ -444,7 +444,7 @@
       // (NON_JSON_RESPONSE, which means Apps Script never even ran doPost) is safe to retry for
       // these; anything else surfaces once so a human decides whether to try again.
       var WRITE_FUNCTIONS = {
-        processorReview: true, approverReview: true, processorReviewBatch: true,
+        processorReview: true, approverReview: true, approverSaveAmount: true, processorReviewBatch: true,
         approverReviewBatch: true, authorizeBatch: true, setCaWindowOverride: true,
         setEmployeeStatus: true, editEmployee: true, addEmployees: true, deleteEmployees: true
       };
@@ -917,7 +917,7 @@
     function loadApproverQueue(session) {
       var container = document.getElementById('appr-results');
       container.innerHTML = '<p class="empty-state">Loading…</p>';
-      gs('getApproverQueue', session.username, session.password).then(function (rows) {
+      return gs('getApproverQueue', session.username, session.password).then(function (rows) {
         // google.script.run (direct Apps Script /exec link) delivers an empty array as null, not [].
         rows = rows || [];
         apprRowsCache = rows;
@@ -1034,7 +1034,10 @@
             '<div class="review-inline" id="appr-inline-' + r.requestId + '">' +
               '<div class="field-group">' +
                 '<label for="appr-amount-' + r.requestId + '">Amount (edit before approving if needed)</label>' +
-                '<select id="appr-amount-' + r.requestId + '">' + buildAmountOptions_(r.amount) + '</select>' +
+                '<div class="row-actions">' +
+                  '<select id="appr-amount-' + r.requestId + '">' + buildAmountOptions_(r.amount) + '</select>' +
+                  '<button class="btn btn-outline" data-save-amount="' + r.requestId + '">Save</button>' +
+                '</div>' +
               '</div>' +
               '<label class="atd-toggle"><input type="checkbox" id="appr-atd-' + r.requestId + '"> ATD Compliant (per auditor)</label>' +
               '<textarea placeholder="Remarks" id="appr-remarks-' + r.requestId + '"></textarea>' +
@@ -1060,6 +1063,24 @@
       area.querySelectorAll('[data-open]').forEach(function (btn) {
         btn.addEventListener('click', function () {
           document.getElementById('appr-inline-' + btn.dataset.open).classList.add('show');
+        });
+      });
+
+      area.querySelectorAll('[data-save-amount]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          var id = btn.dataset.saveAmount;
+          var amount = document.getElementById('appr-amount-' + id).value;
+          btn.disabled = true;
+          gs('approverSaveAmount', id, amount, session.username, session.password).then(function (res) {
+            toast(res && res.changed ? 'Amount saved: ' + formatCurrency(res.amount) : 'Amount unchanged.', 'success');
+            return loadApproverQueue(session);
+          }).then(function () {
+            var panel = document.getElementById('appr-inline-' + id);
+            if (panel) panel.classList.add('show');
+          }).catch(function (err) {
+            btn.disabled = false;
+            toast(err && err.message ? err.message : String(err), 'error');
+          });
         });
       });
 
